@@ -1,0 +1,204 @@
+#!/bin/bash
+
+XRAY_WS_CONF="/usr/local/etc/xray/config.json"
+XRAY_GRPC_CONF="/usr/local/etc/xray/grpc-config.json"
+NGINX_META="/etc/sshplus-nginx-meta.conf"
+
+read_meta() {
+  local key="$1"
+  [[ -f "$NGINX_META" ]] || return 0
+  grep -E "^${key}=" "$NGINX_META" | tail -n 1 | cut -d= -f2-
+}
+
+DOMAIN="$(read_meta DOMAIN)"
+XRAY_WS_PATH="$(read_meta XRAY_WS_PATH)"
+XRAY_GRPC_SERVICE="$(read_meta XRAY_GRPC_SERVICE)"
+
+[[ -z "$XRAY_WS_PATH" ]] && XRAY_WS_PATH="/vmess"
+[[ -z "$XRAY_GRPC_SERVICE" ]] && XRAY_GRPC_SERVICE="grpc"
+
+select_target() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      GERAR CONFIGURAÇÃO XRAY"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Xray WS"
+  echo " [2] Xray gRPC"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " cfgop
+
+  case "$cfgop" in
+    1)
+      TARGET_CONF="$XRAY_WS_CONF"
+      TARGET_LABEL="XRAY_WS"
+      ;;
+    2)
+      TARGET_CONF="$XRAY_GRPC_CONF"
+      TARGET_LABEL="XRAY_GRPC"
+      ;;
+    0)
+      exit 0
+      ;;
+    *)
+      echo "Opção inválida."
+      sleep 1
+      select_target
+      ;;
+  esac
+}
+
+generate_config() {
+  [[ -f "$TARGET_CONF" ]] || {
+    echo "Arquivo não encontrado: $TARGET_CONF"
+    echo
+    read -p "Enter para voltar..."
+    exit 1
+  }
+
+  read -p "Email/Nome do cliente: " CLIENT_EMAIL
+  [[ -z "$CLIENT_EMAIL" ]] && echo "Cliente inválido." && read -p "Enter para voltar..." && exit 1
+
+  if [[ -z "$DOMAIN" ]]; then
+    read -p "Domínio (não encontrado no meta): " DOMAIN
+  fi
+
+  [[ -z "$DOMAIN" ]] && echo "Domínio inválido." && read -p "Enter para voltar..." && exit 1
+
+  export TARGET_CONF TARGET_LABEL CLIENT_EMAIL DOMAIN XRAY_WS_PATH XRAY_GRPC_SERVICE
+
+  python3 <<'PY'
+import json
+import os
+import sys
+import base64
+from pathlib import Path
+
+conf = Path(os.environ["TARGET_CONF"])
+target = os.environ["TARGET_LABEL"]
+client_email = os.environ["CLIENT_EMAIL"]
+domain = os.environ["DOMAIN"]
+ws_path = os.environ["XRAY_WS_PATH"]
+grpc_service = os.environ["XRAY_GRPC_SERVICE"]
+
+data = json.loads(conf.read_text())
+
+if "inbounds" not in data or not data["inbounds"]:
+    print("ERRO: nenhum inbound encontrado")
+    sys.exit(1)
+
+inb = data["inbounds"][0]
+proto = inb.get("protocol", "")
+port = inb.get("port", 443)
+clients = inb.get("settings", {}).get("clients", [])
+
+client = None
+for c in clients:
+    if c.get("email") == client_email:
+        client = c
+        break
+
+if not client:
+    print("ERRO: cliente não encontrado")
+    sys.exit(2)
+
+uuid = client.get("id", "")
+if not uuid:
+    print("ERRO: UUID não encontrado")
+    sys.exit(3)
+
+if target == "XRAY_WS":
+    if proto == "vless":
+        link = (
+            f"vless://{uuid}@{domain}:443"
+            f"?encryption=none&security=tls&type=ws&host={domain}&path={ws_path}"
+            f"#{client_email}"
+        )
+        print("TIPO: VLESS WS")
+        print()
+        print("LINK:")
+        print(link)
+        print()
+        print("RESUMO:")
+        print(f"dominio={domain}")
+        print("porta=443")
+        print(f"path={ws_path}")
+        print("tls=true")
+        print(f"uuid={uuid}")
+
+    elif proto == "vmess":
+        vmess_obj = {
+            "v": "2",
+            "ps": client_email,
+            "add": domain,
+            "port": "443",
+            "id": uuid,
+            "aid": "0",
+            "scy": "auto",
+            "net": "ws",
+            "type": "none",
+            "host": domain,
+            "path": ws_path,
+            "tls": "tls",
+            "sni": domain
+        }
+        raw = json.dumps(vmess_obj, separators=(",", ":"))
+        encoded = base64.b64encode(raw.encode()).decode()
+        print("TIPO: VMESS WS")
+        print()
+        print("LINK:")
+        print("vmess://" + encoded)
+        print()
+        print("JSON:")
+        print(json.dumps(vmess_obj, indent=2))
+    else:
+        print(f"ERRO: protocolo não suportado no WS: {proto}")
+        sys.exit(4)
+
+elif target == "XRAY_GRPC":
+    if proto != "vless":
+        print(f"ERRO: gRPC atual não está em VLESS: {proto}")
+        sys.exit(5)
+
+    # Conforme docs do Xray, com reverse proxy o caminho normal esperado é /{serviceName}/Tun
+    grpc_path = f"/{grpc_service}/Tun"
+
+    link = (
+        f"vless://{uuid}@{domain}:443"
+        f"?encryption=none&security=tls&type=grpc&serviceName={grpc_service}"
+        f"&authority={domain}"
+        f"#{client_email}"
+    )
+
+    print("TIPO: VLESS gRPC")
+    print()
+    print("LINK:")
+    print(link)
+    print()
+    print("RESUMO:")
+    print(f"dominio={domain}")
+    print("porta=443")
+    print(f"serviceName={grpc_service}")
+    print(f"path_proxy={grpc_path}")
+    print("tls=true")
+    print(f"uuid={uuid}")
+else:
+    print("ERRO: target inválido")
+    sys.exit(6)
+PY
+
+  rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo
+    read -p "Enter para voltar..."
+    exit 1
+  fi
+
+  echo
+  /bin/loggerapi "XRAY_CLIENT_CONFIG" "target=${TARGET_LABEL} email=${CLIENT_EMAIL} domain=${DOMAIN}"
+  echo
+  read -p "Enter para voltar..."
+}
+
+select_target
+generate_config
