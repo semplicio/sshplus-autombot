@@ -1,0 +1,63 @@
+#!/bin/bash
+
+apt update -y
+apt install -y curl unzip
+
+XRAY_DIR="/usr/local/xray"
+
+mkdir -p "$XRAY_DIR"
+
+curl -L https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64.zip -o /tmp/xray.zip
+
+unzip /tmp/xray.zip -d "$XRAY_DIR"
+
+chmod +x "$XRAY_DIR/xray"
+
+cat > /usr/local/etc/xray/config.json <<EOF
+{
+  "inbounds": [
+    {
+      "port": 10000,
+      "protocol": "vmess",
+      "settings": {
+        "clients": []
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/vmess"
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ]
+}
+EOF
+
+cat > /etc/systemd/system/xray.service <<EOF
+[Unit]
+Description=Xray Service
+After=network.target
+
+[Service]
+ExecStart=/usr/local/xray/xray -config /usr/local/etc/xray/config.json
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable xray
+systemctl start xray
+
+/bin/loggerapi "XRAY_INSTALL" "xray instalado porta=10000 ws=/vmess"
+
+echo
+echo "Xray instalado"
+read -p "Enter para voltar..."
