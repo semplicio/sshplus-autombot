@@ -50,8 +50,6 @@ install_nginx_ws() {
   apt update -y
   apt install -y nginx certbot python3-certbot-nginx curl
 
-  mkdir -p /etc/nginx/snippets
-
   cat > "$META_FILE" <<EOF
 DOMAIN=${domain}
 WS_PORT=${ws_port}
@@ -59,6 +57,7 @@ XRAY_WS_PORT=${xray_ws_port}
 XRAY_WS_PATH=${xray_ws_path}
 XRAY_GRPC_PORT=${xray_grpc_port}
 XRAY_GRPC_SERVICE=${grpc_service}
+XRAY_GRPC_PATH=/${grpc_service}/Tun
 EOF
 
   rm -f /etc/nginx/sites-enabled/default
@@ -109,8 +108,6 @@ EOF
   systemctl enable nginx
   systemctl restart nginx
 
-  echo
-  echo "Solicitando certificado SSL..."
   certbot --nginx -d "$domain" --non-interactive --register-unsafely-without-email --agree-tos --redirect || {
     echo
     echo "Falha ao gerar certificado SSL."
@@ -127,7 +124,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name ${domain};
 
     ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
@@ -157,4 +155,112 @@ server {
         proxy_redirect off;
         proxy_pass http://127.0.0.1:${xray_ws_port};
         proxy_http_version 1.1;
-        proxy
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+
+    location /${grpc_service}/Tun {
+        grpc_set_header X-Real-IP \$remote_addr;
+        grpc_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        grpc_pass grpc://127.0.0.1:${xray_grpc_port};
+    }
+}
+EOF
+
+  nginx -t || {
+    echo "Erro na configuração final do Nginx."
+    read -p "Enter para voltar..."
+    return
+  }
+
+  systemctl restart nginx
+
+  /bin/loggerapi "NGINX_TLS_INSTALL" "dominio=${domain} ws_port=${ws_port} xray_ws_port=${xray_ws_port} xray_ws_path=${xray_ws_path} grpc_port=${xray_grpc_port} grpc_service=${grpc_service}"
+
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Nginx avançado configurado com sucesso"
+  echo "Domínio      : ${domain}"
+  echo "WS SSH       : https://${domain}/ws"
+  echo "Xray WS      : https://${domain}${xray_ws_path}"
+  echo "Xray gRPC    : https://${domain}/${grpc_service}/Tun"
+  echo "ServiceName  : ${grpc_service}"
+  echo "HTTPS/TLS    : 443"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  read -p "Enter para voltar..."
+}
+
+status_nginx_ws() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "     STATUS NGINX AVANÇADO + TLS"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  [[ -f "$META_FILE" ]] && echo "Metadados:" && cat "$META_FILE" && echo
+  [[ -f "$NGINX_SITE" ]] && echo "Configuração:" && cat "$NGINX_SITE" && echo
+
+  systemctl status nginx --no-pager
+  echo
+  read -p "Enter para voltar..."
+}
+
+restart_nginx_ws() {
+  systemctl restart nginx
+  /bin/loggerapi "NGINX_TLS_RESTART" "nginx reiniciado"
+  echo
+  echo "Nginx reiniciado."
+  echo
+  read -p "Enter para voltar..."
+}
+
+renew_ssl() {
+  certbot renew --dry-run
+  echo
+  read -p "Enter para voltar..."
+}
+
+remove_nginx_ws() {
+  read -p "Confirma remover configuração Nginx/TLS? [s/N]: " confirm
+  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+
+  rm -f "$NGINX_LINK"
+  rm -f "$NGINX_SITE"
+  rm -f "$META_FILE"
+  systemctl restart nginx >/dev/null 2>&1 || true
+
+  /bin/loggerapi "NGINX_TLS_REMOVE" "configuracao removida"
+
+  echo
+  echo "Configuração removida."
+  echo
+  read -p "Enter para voltar..."
+}
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "    GERENCIAR NGINX AVANÇADO + TLS"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Instalar / Reconfigurar"
+  echo " [2] Ver status"
+  echo " [3] Reiniciar"
+  echo " [4] Testar renovação SSL"
+  echo " [5] Remover configuração"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1) install_nginx_ws ;;
+    2) status_nginx_ws ;;
+    3) restart_nginx_ws ;;
+    4) renew_ssl ;;
+    5) remove_nginx_ws ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
