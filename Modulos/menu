@@ -136,6 +136,8 @@ validate_modules() {
     sshmonitor
     verifatt
     attscript
+    verifilimite
+    killexcesso
   )
 
   for mod in "${mods[@]}"; do
