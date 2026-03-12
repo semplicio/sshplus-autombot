@@ -1,0 +1,243 @@
+#!/bin/bash
+
+NGINX_SITE="/etc/nginx/sites-available/sshplus"
+WEB_ROOT="/var/www/sshplus-fake"
+CAMO_META="/etc/sshplus-camo-meta.conf"
+
+instalar_camuflagem() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      CAMUFLAGEM + PÁGINA FAKE"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  if [[ ! -f "$NGINX_SITE" ]]; then
+    echo "Configuração do Nginx não encontrada."
+    echo "Instale primeiro o módulo Nginx + TLS + WS."
+    echo
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  read -p "Título da página fake [Welcome]: " fake_title
+  fake_title="${fake_title:-Welcome}"
+
+  read -p "Subtítulo da página [Service Online]: " fake_subtitle
+  fake_subtitle="${fake_subtitle:-Service Online}"
+
+  read -p "Texto do rodapé [Powered by SSHPLUS AutomBot]: " fake_footer
+  fake_footer="${fake_footer:-Powered by SSHPLUS AutomBot}"
+
+  read -p "Path alternativo 1 [/connect]: " alt_path1
+  alt_path1="${alt_path1:-/connect}"
+
+  read -p "Path alternativo 2 [/proxy]: " alt_path2
+  alt_path2="${alt_path2:-/proxy}"
+
+  mkdir -p "$WEB_ROOT"
+
+  cat > "${WEB_ROOT}/index.html" <<EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${fake_title}</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+    }
+    .box {
+      max-width: 680px;
+      padding: 40px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    h1 {
+      margin-bottom: 10px;
+      font-size: 36px;
+    }
+    p {
+      font-size: 18px;
+      opacity: 0.9;
+    }
+    .footer {
+      margin-top: 24px;
+      font-size: 14px;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>${fake_title}</h1>
+    <p>${fake_subtitle}</p>
+    <div class="footer">${fake_footer}</div>
+  </div>
+</body>
+</html>
+EOF
+
+  cat > "$CAMO_META" <<EOF
+FAKE_TITLE=${fake_title}
+FAKE_SUBTITLE=${fake_subtitle}
+FAKE_FOOTER=${fake_footer}
+ALT_PATH1=${alt_path1}
+ALT_PATH2=${alt_path2}
+EOF
+
+  cp "$NGINX_SITE" "${NGINX_SITE}.bak.$(date +%Y%m%d-%H%M%S)"
+
+  python3 - <<'PY'
+from pathlib import Path
+import re
+
+nginx_site = Path("/etc/nginx/sites-available/sshplus")
+text = nginx_site.read_text()
+
+# Substitui bloco da raiz por root real
+text = re.sub(
+    r'location / \{.*?\}',
+    '''location / {
+        root /var/www/sshplus-fake;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }''',
+    text,
+    flags=re.S
+)
+
+# Injeta paths alternativos antes do fechamento do server TLS
+insert_block = '''
+    location /connect {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /proxy {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+'''
+
+# tenta injetar no bloco 443
+matches = list(re.finditer(r'server \{', text))
+if matches:
+    last_server_start = matches[-1].start()
+    last_server = text[last_server_start:]
+    idx = last_server.rfind('}')
+    if idx != -1:
+        last_server = last_server[:idx] + insert_block + "\n}" + last_server[idx+1:]
+        text = text[:last_server_start] + last_server
+
+nginx_site.write_text(text)
+PY
+
+  nginx -t || {
+    echo
+    echo "Erro na configuração do Nginx após aplicar camuflagem."
+    read -p "Enter para voltar..."
+    return
+  }
+
+  systemctl restart nginx
+  /bin/loggerapi "CAMO_INSTALL" "titulo=${fake_title} alt1=${alt_path1} alt2=${alt_path2}"
+
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Camuflagem aplicada com sucesso"
+  echo "Página fake : /"
+  echo "Alt path 1  : ${alt_path1}"
+  echo "Alt path 2  : ${alt_path2}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  read -p "Enter para voltar..."
+}
+
+status_camuflagem() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "       STATUS DA CAMUFLAGEM"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  if [[ -f "$CAMO_META" ]]; then
+    cat "$CAMO_META"
+    echo
+  else
+    echo "Metadados não encontrados."
+    echo
+  fi
+
+  if [[ -f "${WEB_ROOT}/index.html" ]]; then
+    echo "Página fake criada em:"
+    echo "${WEB_ROOT}/index.html"
+    echo
+  else
+    echo "Página fake não encontrada."
+    echo
+  fi
+
+  echo "Trecho atual do Nginx:"
+  echo
+  cat "$NGINX_SITE"
+  echo
+  read -p "Enter para voltar..."
+}
+
+remover_camuflagem() {
+  read -p "Confirma remover camuflagem? [s/N]: " confirm
+  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+
+  rm -rf "$WEB_ROOT"
+  rm -f "$CAMO_META"
+
+  /bin/loggerapi "CAMO_REMOVE" "camuflagem removida"
+
+  echo
+  echo "Arquivos da camuflagem removidos."
+  echo "A configuração do Nginx deve ser revisada manualmente se quiser desfazer totalmente."
+  echo
+  read -p "Enter para voltar..."
+}
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "     GERENCIAR CAMUFLAGEM WEB"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Instalar / Reconfigurar"
+  echo " [2] Ver status"
+  echo " [3] Remover arquivos"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1) instalar_camuflagem ;;
+    2) status_camuflagem ;;
+    3) remover_camuflagem ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
