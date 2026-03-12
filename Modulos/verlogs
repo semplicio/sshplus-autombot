@@ -1,0 +1,23 @@
+#!/bin/bash
+
+LOG_FILE="/var/log/sshplus.log"
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "                        LOGS SSHPLUS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+if [[ ! -f "$LOG_FILE" ]]; then
+  echo "Arquivo de log ainda não existe."
+  echo
+  read -p "Enter para voltar..."
+  exit 0
+fi
+
+tail -n 50 "$LOG_FILE"
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Arquivo: $LOG_FILE"
+echo
+read -p "Enter para voltar..."
