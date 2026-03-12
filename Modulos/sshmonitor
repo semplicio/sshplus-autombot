@@ -1,0 +1,14 @@
+#!/bin/bash
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "            MONITOR SSH ONLINE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+ps -ef | grep '[s]shd:' | grep -v root | awk '{print $1, $8, $9, $10, $11}'
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Total: $(ps -ef | grep '[s]shd:' | grep -v root | wc -l)"
+echo
+read -p "Enter para voltar..."
