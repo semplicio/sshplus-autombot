@@ -1,0 +1,108 @@
+#!/bin/bash
+
+LOG_FILE="/var/log/sshplus.log"
+BACKUP_DIR="/root/sshplus-backup"
+LIMIT_DIR="/etc/SSHPlus/limites"
+
+get_total_users() {
+  awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | wc -l
+}
+
+get_online_users() {
+  who 2>/dev/null | awk '{print $1}' | sort | uniq | wc -l
+}
+
+get_total_sessions() {
+  ps -eo user=,cmd= | awk '$1!="root" && $0 ~ /sshd:/ {c++} END {print c+0}'
+}
+
+get_expired_users() {
+  local count=0
+  while IFS=: read -r user _ uid _ _ _ _; do
+    [[ "$uid" -lt 1000 ]] && continue
+    [[ "$user" == "nobody" ]] && continue
+
+    exp="$(chage -l "$user" 2>/dev/null | awk -F': ' '/Account expires/ {print $2}')"
+    case "$exp" in
+      ""|never|jamais|Nunca) continue ;;
+    esac
+
+    exp_epoch="$(date -d "$exp" +%s 2>/dev/null || echo 0)"
+    now_epoch="$(date +%s)"
+    [[ "$exp_epoch" -gt 0 && "$exp_epoch" -lt "$now_epoch" ]] && count=$((count + 1))
+  done < /etc/passwd
+  echo "$count"
+}
+
+get_blocked_users() {
+  passwd -S 2>/dev/null | awk '$2=="L" {c++} END {print c+0}'
+}
+
+get_latest_backup() {
+  ls -1t "${BACKUP_DIR}"/sshplus-backup-*.tar.gz 2>/dev/null | head -n 1
+}
+
+get_recent_logs_json() {
+  if [[ -f "$LOG_FILE" ]]; then
+    tail -n 10 "$LOG_FILE" | jq -R . | jq -s .
+  else
+    echo "[]"
+  fi
+}
+
+get_user_list_json() {
+  awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | jq -R . | jq -s .
+}
+
+get_active_sessions_json() {
+  who 2>/dev/null | awk '
+  {
+    user=$1
+    tty=$2
+    date=$3 " " $4
+    origin=$5
+    gsub(/^\(/, "", origin)
+    gsub(/\)$/, "", origin)
+    printf "{\"user\":\"%s\",\"tty\":\"%s\",\"date\":\"%s\",\"origin\":\"%s\"}\n", user, tty, date, origin
+  }' | jq -s .
+}
+
+jq -n \
+  --arg hostname "$(hostname 2>/dev/null)" \
+  --arg ip "$(cat /etc/IP 2>/dev/null || echo indefinido)" \
+  --arg os "$(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')" \
+  --arg kernel "$(uname -r)" \
+  --arg arch "$(uname -m)" \
+  --arg latest_backup "$(get_latest_backup)" \
+  --argjson total_users "$(get_total_users)" \
+  --argjson online_users "$(get_online_users)" \
+  --argjson total_sessions "$(get_total_sessions)" \
+  --argjson expired_users "$(get_expired_users)" \
+  --argjson blocked_users "$(get_blocked_users)" \
+  --argjson users "$(get_user_list_json)" \
+  --argjson sessions "$(get_active_sessions_json)" \
+  --argjson recent_logs "$(get_recent_logs_json)" \
+  '{
+    project: "SSHPLUS AutomBot ARM",
+    generated_at: (now | todate),
+    server: {
+      hostname: $hostname,
+      ip: $ip,
+      os: $os,
+      kernel: $kernel,
+      architecture: $arch
+    },
+    metrics: {
+      total_users: $total_users,
+      online_users: $online_users,
+      total_sessions: $total_sessions,
+      expired_users: $expired_users,
+      blocked_users: $blocked_users
+    },
+    backup: {
+      latest_file: $latest_backup
+    },
+    users: $users,
+    sessions: $sessions,
+    recent_logs: $recent_logs
+  }'
