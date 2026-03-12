@@ -9,6 +9,9 @@ IP_FILE="/etc/IP"
 verde() { echo -e "\033[1;32m$1\033[0m"; }
 amarelo() { echo -e "\033[1;33m$1\033[0m"; }
 vermelho() { echo -e "\033[1;31m$1\033[0m"; }
+azul() { echo -e "\033[1;34m$1\033[0m"; }
+roxo() { echo -e "\033[0;35m$1\033[0m"; }
+branco() { echo -e "\033[1;37m$1\033[0m"; }
 
 get_ip() {
   [[ -f "$IP_FILE" ]] && cat "$IP_FILE" || curl -4 -fsSL ifconfig.me 2>/dev/null || echo "0.0.0.0"
@@ -45,78 +48,44 @@ get_expired_users() {
   echo "$count"
 }
 
+pause() {
+  echo
+  read -p "Enter para voltar..." _
+}
+
 show_header() {
   clear
-  echo -e "\033[0;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-  echo -e "\033[1;37m                 SSHPLUS AutomBot ARM              \033[0m"
-  echo -e "\033[0;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+  roxo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  branco "                 SSHPLUS AutomBot ARM              "
+  roxo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo -e "\033[1;33mIP:\033[0m $(get_ip)"
   echo -e "\033[1;33mVersão:\033[0m $(get_version)"
   echo -e "\033[1;33mOnline SSH:\033[0m $(get_online_users)"
   echo -e "\033[1;33mUsuários:\033[0m $(get_total_users)"
   echo -e "\033[1;33mExpirados:\033[0m $(get_expired_users)"
-  echo -e "\033[0;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-}
-
-show_options() {
-  echo " [1] Criar usuário"
-  echo " [2] Alterar senha"
-  echo " [3] Alterar limite"
-  echo " [4] Remover usuário"
-  echo " [5] Monitor SSH"
-  echo " [6] Sessões por usuário"
-  echo " [7] Listar usuários"
-  echo " [8] Verificar atualização"
-  echo " [9] Atualizar script"
-  echo " [10] Status do sistema"
-  echo " [11] Reiniciar serviços"
-  echo " [12] Ver logs"
-  echo " [13] Backup da base"
-  echo " [14] Restaurar base"
-  echo " [15] Dashboard"
-  echo " [16] Exportar resumo"
-  echo " [17] Ver JSON status"
-  echo " [18] Exportar JSON"
-  echo " [19] Instalar WebSocket SSH"
-  echo " [20] Instalar Xray WS"
-  echo " [21] Instalar OpenVPN"
-  echo " [22] Instalar Nginx + TLS + WS"
-  echo " [23] Instalar Xray gRPC"
-  echo " [24] Camuflagem e página fake"
-  echo " [25] Painel de conexões"
-  echo " [26] Reiniciar serviços de conexão"
-  echo " [27] Adicionar cliente Xray"
-  echo " [28] Listar clientes Xray"
-  echo " [29] Remover cliente Xray"
-  echo " [30] Gerar config de cliente Xray"
-  echo " [31] Exportar config de cliente Xray"
-  echo " [32] Gerar pacote do cliente"
-  echo " [33] Exportar pacote do cliente"
-  echo " [34] Gestão de planos Xray"
-  echo " [35] Expiração de clientes Xray"
-  echo " [36] Gerenciar paths de payload"
-  echo " [37] Ver payloads base"
-  echo " [38] Gerar payload pronto"
-  echo " [39] Exportar payload para arquivo"
-  echo " [40] Perfis comerciais de payload"
-  echo " [41] Exportar perfil comercial"
-  echo " [42] Instalar TLS automático"
-  echo " [43] Renovar certificados TLS"
-  echo " [0] Sair"
+  azul "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
 }
 
+show_subheader() {
+  local titulo="$1"
+  show_header
+  branco " $titulo"
+  azul "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
 system_status() {
+  show_subheader "STATUS DO SISTEMA"
   echo -e "\033[1;32mSistema:\033[0m $(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')"
   echo -e "\033[1;32mKernel:\033[0m $(uname -r)"
   echo -e "\033[1;32mArquitetura:\033[0m $(uname -m)"
   echo -e "\033[1;32mMemória:\033[0m $(free -h | awk '/Mem:/ {print $3 " / " $2}')"
   echo -e "\033[1;32mDisco:\033[0m $(df -h / | awk 'NR==2 {print $3 " / " $2 " (" $5 ")"}')"
-  echo
-  read -p "Enter para voltar..."
+  pause
 }
 
 check_update() {
+  show_subheader "VERIFICAR ATUALIZAÇÃO"
   if command -v verifatt >/dev/null 2>&1; then
     result="$(verifatt 2>/dev/null || true)"
     if echo "$result" | grep -q "ATUALIZACAO_DISPONIVEL"; then
@@ -127,26 +96,25 @@ check_update() {
   else
     vermelho "Comando verifatt não encontrado."
   fi
-  echo
-  read -p "Enter para voltar..."
+  pause
 }
 
 run_update() {
   if command -v attscript >/dev/null 2>&1; then
     bash /bin/attscript
   else
+    show_subheader "ATUALIZAR SCRIPT"
     vermelho "Comando attscript não encontrado."
-    echo
-    read -p "Enter para voltar..."
+    pause
   fi
 }
 
-restart_services() {
+restart_basic_services() {
+  show_subheader "REINICIAR SERVIÇOS BÁSICOS"
   systemctl restart ssh >/dev/null 2>&1 || service ssh restart >/dev/null 2>&1 || true
   systemctl restart cron >/dev/null 2>&1 || service cron restart >/dev/null 2>&1 || true
   verde "Serviços básicos reiniciados."
-  echo
-  read -p "Enter para voltar..."
+  pause
 }
 
 run_module() {
@@ -155,8 +123,7 @@ run_module() {
     "/bin/$module"
   else
     vermelho "Módulo /bin/$module não encontrado."
-    echo
-    read -p "Enter para voltar..."
+    pause
   fi
 }
 
@@ -219,16 +186,24 @@ validate_modules() {
 
   if [[ "$missing" -eq 1 ]]; then
     echo
-    read -p "Alguns módulos estão ausentes. Pressione Enter para continuar..."
+    read -p "Alguns módulos estão ausentes. Pressione Enter para continuar..." _
   fi
 }
 
-main_menu() {
-  validate_modules
+menu_usuarios() {
   while true; do
-    show_header
-    show_options
+    show_subheader "GESTÃO DE USUÁRIOS"
+    echo " [1] Criar usuário"
+    echo " [2] Alterar senha"
+    echo " [3] Alterar limite"
+    echo " [4] Remover usuário"
+    echo " [5] Monitor SSH"
+    echo " [6] Sessões por usuário"
+    echo " [7] Listar usuários"
+    echo " [0] Voltar"
+    echo
     read -p "Escolha uma opção: " opcao
+
     case "$opcao" in
       1) clear; run_module criarusuario ;;
       2) clear; run_module alterarsenha ;;
@@ -237,42 +212,191 @@ main_menu() {
       5) clear; run_module sshmonitor ;;
       6) clear; run_module sessoesusuario ;;
       7) clear; run_module listarusuarios ;;
-      8) clear; check_update ;;
-      9) clear; run_update ;;
-      10) clear; system_status ;;
-      11) clear; restart_services ;;
-      12) clear; run_module verlogs ;;
-      13) clear; run_module backupbase ;;
-      14) clear; run_module restaurarbase ;;
-      15) clear; run_module dashboardinfo ;;
-      16) clear; run_module exportarinfo ;;
-      17) clear; run_module jsonstatus ;;
-      18) clear; run_module exportarjson ;;
-      19) clear; run_module installws ;;
-      20) clear; run_module installxray ;;
-      21) clear; run_module installopenvpn ;;
-      22) clear; run_module installnginxws ;;
-      23) clear; run_module installxraygrpc ;;
-      24) clear; run_module installcamuflagem ;;
-      25) clear; run_module painelconexoes ;;
-      26) clear; run_module reiniciarservicos ;;
-      27) clear; run_module xrayaddcliente ;;
-      28) clear; run_module xraylistarclientes ;;
-      29) clear; run_module xrayremovercliente ;;
-      30) clear; run_module xraygerarconfig ;;
-      31) clear; run_module xrayexportarcliente ;;
-      32) clear; run_module gerarpacotecliente ;;
-      33) clear; run_module exportarpacotecliente ;;
-      34) clear; run_module xrayplanos ;;
-      35) clear; run_module xrayexpirar ;;
-      36) clear; run_module payloadpaths ;;
-      37) clear; run_module payloadviewer ;;
-      38) clear; run_module payloadexport ;;
-      39) clear; run_module payloadexportfile ;;
-      40) clear; run_module payloadprofiles ;;
-      41) clear; run_module payloadprofileexport ;;
-      42) clear; run_module installtls ;;
-      43) clear; run_module tlsrenew ;;
+      0) break ;;
+      *) vermelho "Opção inválida."; sleep 1 ;;
+    esac
+  done
+}
+
+menu_sistema() {
+  while true; do
+    show_subheader "SISTEMA E MANUTENÇÃO"
+    echo " [1] Verificar atualização"
+    echo " [2] Atualizar script"
+    echo " [3] Status do sistema"
+    echo " [4] Reiniciar serviços básicos"
+    echo " [5] Ver logs"
+    echo " [6] Backup da base"
+    echo " [7] Restaurar base"
+    echo " [8] Dashboard"
+    echo " [0] Voltar"
+    echo
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+      1) clear; check_update ;;
+      2) clear; run_update ;;
+      3) clear; system_status ;;
+      4) clear; restart_basic_services ;;
+      5) clear; run_module verlogs ;;
+      6) clear; run_module backupbase ;;
+      7) clear; run_module restaurarbase ;;
+      8) clear; run_module dashboardinfo ;;
+      0) break ;;
+      *) vermelho "Opção inválida."; sleep 1 ;;
+    esac
+  done
+}
+
+menu_conexoes() {
+  while true; do
+    show_subheader "CONEXÕES E INSTALAÇÕES"
+    echo " [1] Instalar WebSocket SSH"
+    echo " [2] Instalar Xray WS"
+    echo " [3] Instalar OpenVPN"
+    echo " [4] Instalar Nginx + TLS + WS"
+    echo " [5] Instalar Xray gRPC"
+    echo " [6] Camuflagem e página fake"
+    echo " [7] Painel de conexões"
+    echo " [8] Reiniciar serviços de conexão"
+    echo " [0] Voltar"
+    echo
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+      1) clear; run_module installws ;;
+      2) clear; run_module installxray ;;
+      3) clear; run_module installopenvpn ;;
+      4) clear; run_module installnginxws ;;
+      5) clear; run_module installxraygrpc ;;
+      6) clear; run_module installcamuflagem ;;
+      7) clear; run_module painelconexoes ;;
+      8) clear; run_module reiniciarservicos ;;
+      0) break ;;
+      *) vermelho "Opção inválida."; sleep 1 ;;
+    esac
+  done
+}
+
+menu_xray() {
+  while true; do
+    show_subheader "XRAY E CLIENTES"
+    echo " [1] Adicionar cliente Xray"
+    echo " [2] Listar clientes Xray"
+    echo " [3] Remover cliente Xray"
+    echo " [4] Gerar config de cliente Xray"
+    echo " [5] Exportar config de cliente Xray"
+    echo " [6] Gerar pacote do cliente"
+    echo " [7] Exportar pacote do cliente"
+    echo " [8] Gestão de planos Xray"
+    echo " [9] Expiração de clientes Xray"
+    echo " [0] Voltar"
+    echo
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+      1) clear; run_module xrayaddcliente ;;
+      2) clear; run_module xraylistarclientes ;;
+      3) clear; run_module xrayremovercliente ;;
+      4) clear; run_module xraygerarconfig ;;
+      5) clear; run_module xrayexportarcliente ;;
+      6) clear; run_module gerarpacotecliente ;;
+      7) clear; run_module exportarpacotecliente ;;
+      8) clear; run_module xrayplanos ;;
+      9) clear; run_module xrayexpirar ;;
+      0) break ;;
+      *) vermelho "Opção inválida."; sleep 1 ;;
+    esac
+  done
+}
+
+menu_payloads() {
+  while true; do
+    show_subheader "PAYLOADS E PERFIS"
+    echo " [1] Gerenciar paths de payload"
+    echo " [2] Ver payloads base"
+    echo " [3] Gerar payload pronto"
+    echo " [4] Exportar payload para arquivo"
+    echo " [5] Perfis comerciais de payload"
+    echo " [6] Exportar perfil comercial"
+    echo " [0] Voltar"
+    echo
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+      1) clear; run_module payloadpaths ;;
+      2) clear; run_module payloadviewer ;;
+      3) clear; run_module payloadexport ;;
+      4) clear; run_module payloadexportfile ;;
+      5) clear; run_module payloadprofiles ;;
+      6) clear; run_module payloadprofileexport ;;
+      0) break ;;
+      *) vermelho "Opção inválida."; sleep 1 ;;
+    esac
+  done
+}
+
+menu_tls() {
+  while true; do
+    show_subheader "TLS / SSL"
+    echo " [1] Instalar TLS automático"
+    echo " [2] Renovar certificados TLS"
+    echo " [0] Voltar"
+    echo
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+      1) clear; run_module installtls ;;
+      2) clear; run_module tlsrenew ;;
+      0) break ;;
+      *) vermelho "Opção inválida."; sleep 1 ;;
+    esac
+  done
+}
+
+menu_exportacao() {
+  while true; do
+    show_subheader "EXPORTAÇÃO E RELATÓRIOS"
+    echo " [1] Exportar resumo"
+    echo " [2] Ver JSON status"
+    echo " [3] Exportar JSON"
+    echo " [0] Voltar"
+    echo
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+      1) clear; run_module exportarinfo ;;
+      2) clear; run_module jsonstatus ;;
+      3) clear; run_module exportarjson ;;
+      0) break ;;
+      *) vermelho "Opção inválida."; sleep 1 ;;
+    esac
+  done
+}
+
+main_menu() {
+  validate_modules
+  while true; do
+    show_header
+    echo " [1] Gestão de usuários"
+    echo " [2] Sistema e manutenção"
+    echo " [3] Conexões e instalações"
+    echo " [4] Xray e clientes"
+    echo " [5] Payloads e perfis"
+    echo " [6] TLS / SSL"
+    echo " [7] Exportação e relatórios"
+    echo " [0] Sair"
+    echo
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+      1) menu_usuarios ;;
+      2) menu_sistema ;;
+      3) menu_conexoes ;;
+      4) menu_xray ;;
+      5) menu_payloads ;;
+      6) menu_tls ;;
+      7) menu_exportacao ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
