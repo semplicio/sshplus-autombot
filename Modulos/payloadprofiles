@@ -1,0 +1,178 @@
+#!/bin/bash
+
+PROFILE_DIR="/etc/SSHPlus/payload-profiles"
+NGINX_META="/etc/sshplus-nginx-meta.conf"
+mkdir -p "$PROFILE_DIR"
+
+read_meta() {
+  local key="$1"
+  [[ -f "$NGINX_META" ]] || return 0
+  grep -E "^${key}=" "$NGINX_META" | tail -n 1 | cut -d= -f2-
+}
+
+DOMAIN="$(read_meta DOMAIN)"
+[[ -z "$DOMAIN" ]] && DOMAIN="$(cat /etc/IP 2>/dev/null || echo "SEU_DOMINIO")"
+
+create_profile() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      CRIAR / ATUALIZAR PERFIL"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  read -p "Nome do perfil [ex: tim-sockshttp]: " profile_name
+  [[ -z "$profile_name" ]] && echo "Nome inválido." && read -p "Enter para voltar..." && return
+
+  read -p "Operadora [tim/vivo/claro/generico]: " operator_name
+  operator_name="${operator_name:-generico}"
+
+  read -p "Aplicativo [sockhttp/httpinjector/hatunnel/generico]: " app_name
+  app_name="${app_name:-generico}"
+
+  read -p "Host [${DOMAIN}]: " host_name
+  host_name="${host_name:-$DOMAIN}"
+
+  read -p "Porta [443]: " port_number
+  port_number="${port_number:-443}"
+
+  if [[ ! "$port_number" =~ ^[0-9]+$ ]]; then
+    echo "Porta inválida."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  read -p "SNI [${host_name}]: " sni_name
+  sni_name="${sni_name:-$host_name}"
+
+  read -p "Path [/ws]: " path_name
+  path_name="${path_name:-/ws}"
+
+  read -p "User-Agent [Googlebot/2.1]: " user_agent
+  user_agent="${user_agent:-Googlebot/2.1}"
+
+  read -p "Usar rotate host? [s/N]: " use_rotate
+  [[ "$use_rotate" == "s" || "$use_rotate" == "S" ]] && rotate_mode="yes" || rotate_mode="no"
+
+  read -p "Observação [opcional]: " note_text
+
+  cat > "${PROFILE_DIR}/${profile_name}.conf" <<EOF
+PROFILE_NAME=${profile_name}
+OPERATOR=${operator_name}
+APP=${app_name}
+HOST=${host_name}
+PORT=${port_number}
+SNI=${sni_name}
+PATH=${path_name}
+USER_AGENT=${user_agent}
+ROTATE=${rotate_mode}
+NOTE=${note_text}
+EOF
+
+  /bin/loggerapi "PAYLOAD_PROFILE_SAVE" "profile=${profile_name} operator=${operator_name} app=${app_name} path=${path_name}"
+
+  echo
+  echo "Perfil salvo com sucesso."
+  echo
+  read -p "Enter para voltar..."
+}
+
+list_profiles() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "                 PERFIS DE PAYLOAD"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  found=0
+  for f in "${PROFILE_DIR}"/*.conf; do
+    [[ -f "$f" ]] || continue
+    found=1
+
+    profile="$(grep '^PROFILE_NAME=' "$f" | cut -d= -f2-)"
+    operator="$(grep '^OPERATOR=' "$f" | cut -d= -f2-)"
+    app="$(grep '^APP=' "$f" | cut -d= -f2-)"
+    host="$(grep '^HOST=' "$f" | cut -d= -f2-)"
+    path="$(grep '^PATH=' "$f" | cut -d= -f2-)"
+
+    printf "%-24s %-10s %-14s %-20s %-12s\n" "$profile" "$operator" "$app" "$host" "$path"
+  done
+
+  if [[ "$found" -eq 0 ]]; then
+    echo "Nenhum perfil cadastrado."
+  fi
+
+  echo
+  read -p "Enter para voltar..."
+}
+
+view_profile() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "          DETALHES DO PERFIL"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  read -p "Nome do perfil: " profile_name
+  [[ -z "$profile_name" ]] && echo "Nome inválido." && read -p "Enter para voltar..." && return
+
+  file="${PROFILE_DIR}/${profile_name}.conf"
+  if [[ ! -f "$file" ]]; then
+    echo "Perfil não encontrado."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  cat "$file"
+  echo
+  read -p "Enter para voltar..."
+}
+
+remove_profile() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "          REMOVER PERFIL"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  read -p "Nome do perfil: " profile_name
+  [[ -z "$profile_name" ]] && echo "Nome inválido." && read -p "Enter para voltar..." && return
+
+  file="${PROFILE_DIR}/${profile_name}.conf"
+  if [[ ! -f "$file" ]]; then
+    echo "Perfil não encontrado."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  read -p "Confirma remover ${profile_name}? [s/N]: " confirm
+  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+
+  rm -f "$file"
+  /bin/loggerapi "PAYLOAD_PROFILE_REMOVE" "profile=${profile_name}"
+
+  echo
+  echo "Perfil removido."
+  echo
+  read -p "Enter para voltar..."
+}
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      PERFIS COMERCIAIS DE PAYLOAD"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Criar / Atualizar perfil"
+  echo " [2] Listar perfis"
+  echo " [3] Ver detalhes do perfil"
+  echo " [4] Remover perfil"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1) create_profile ;;
+    2) list_profiles ;;
+    3) view_profile ;;
+    4) remove_profile ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
