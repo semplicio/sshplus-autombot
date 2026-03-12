@@ -175,6 +175,7 @@ validate_modules() {
     payloadprofileexport
     installtls
     tlsrenew
+    installsockshttp
   )
 
   for mod in "${mods[@]}"; do
@@ -259,6 +260,7 @@ menu_conexoes() {
     echo " [6] Camuflagem e página fake"
     echo " [7] Painel de conexões"
     echo " [8] Reiniciar serviços de conexão"
+    echo " [9] Instalar SOCKSHTTP"
     echo " [0] Voltar"
     echo
     read -p "Escolha uma opção: " opcao
@@ -272,6 +274,7 @@ menu_conexoes() {
       6) clear; run_module installcamuflagem ;;
       7) clear; run_module painelconexoes ;;
       8) clear; run_module reiniciarservicos ;;
+      9) clear; run_module installsockshttp ;;
       0) break ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
