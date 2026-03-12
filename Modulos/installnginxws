@@ -2,11 +2,12 @@
 
 NGINX_SITE="/etc/nginx/sites-available/sshplus"
 NGINX_LINK="/etc/nginx/sites-enabled/sshplus"
+META_FILE="/etc/sshplus-nginx-meta.conf"
 
 install_nginx_ws() {
   clear
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "     INSTALAÇÃO NGINX + TLS + WS"
+  echo "   NGINX AVANÇADO + TLS + WS + gRPC"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
 
@@ -16,8 +17,17 @@ install_nginx_ws() {
   read -p "Porta interna do WebSocket SSH [8080]: " ws_port
   ws_port="${ws_port:-8080}"
 
-  read -p "Porta interna do Xray [10000]: " xray_port
-  xray_port="${xray_port:-10000}"
+  read -p "Porta interna do Xray WS [10000]: " xray_ws_port
+  xray_ws_port="${xray_ws_port:-10000}"
+
+  read -p "Path do Xray WS [/vmess]: " xray_ws_path
+  xray_ws_path="${xray_ws_path:-/vmess}"
+
+  read -p "Porta interna do Xray gRPC [20000]: " xray_grpc_port
+  xray_grpc_port="${xray_grpc_port:-20000}"
+
+  read -p "ServiceName do gRPC [grpc]: " grpc_service
+  grpc_service="${grpc_service:-grpc}"
 
   if [[ ! "$ws_port" =~ ^[0-9]+$ ]]; then
     echo "Porta WS inválida."
@@ -25,14 +35,31 @@ install_nginx_ws() {
     return
   fi
 
-  if [[ ! "$xray_port" =~ ^[0-9]+$ ]]; then
-    echo "Porta Xray inválida."
+  if [[ ! "$xray_ws_port" =~ ^[0-9]+$ ]]; then
+    echo "Porta Xray WS inválida."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  if [[ ! "$xray_grpc_port" =~ ^[0-9]+$ ]]; then
+    echo "Porta Xray gRPC inválida."
     read -p "Enter para voltar..."
     return
   fi
 
   apt update -y
   apt install -y nginx certbot python3-certbot-nginx curl
+
+  mkdir -p /etc/nginx/snippets
+
+  cat > "$META_FILE" <<EOF
+DOMAIN=${domain}
+WS_PORT=${ws_port}
+XRAY_WS_PORT=${xray_ws_port}
+XRAY_WS_PATH=${xray_ws_path}
+XRAY_GRPC_PORT=${xray_grpc_port}
+XRAY_GRPC_SERVICE=${grpc_service}
+EOF
 
   rm -f /etc/nginx/sites-enabled/default
   rm -f /etc/nginx/sites-available/default
@@ -58,9 +85,9 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
 
-    location /vmess {
+    location ${xray_ws_path} {
         proxy_redirect off;
-        proxy_pass http://127.0.0.1:${xray_port};
+        proxy_pass http://127.0.0.1:${xray_ws_port};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -74,7 +101,7 @@ EOF
   ln -sf "$NGINX_SITE" "$NGINX_LINK"
 
   nginx -t || {
-    echo "Erro na configuração do Nginx."
+    echo "Erro na configuração inicial do Nginx."
     read -p "Enter para voltar..."
     return
   }
@@ -87,94 +114,47 @@ EOF
   certbot --nginx -d "$domain" --non-interactive --register-unsafely-without-email --agree-tos --redirect || {
     echo
     echo "Falha ao gerar certificado SSL."
-    echo "Verifique:"
-    echo "1. domínio apontando para a VPS"
-    echo "2. porta 80 liberada"
-    echo "3. Nginx ativo"
-    echo
+    echo "Verifique domínio, DNS e porta 80 liberada."
     read -p "Enter para voltar..."
     return
   }
 
-  systemctl restart nginx
-
-  /bin/loggerapi "NGINX_TLS_INSTALL" "dominio=${domain} ws_port=${ws_port} xray_port=${xray_port}"
-
-  echo
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "Nginx + TLS configurado com sucesso"
-  echo "Domínio : ${domain}"
-  echo "WS Path : /ws"
-  echo "VMESS   : /vmess"
-  echo "HTTPS   : 443"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo
-  read -p "Enter para voltar..."
+  cat > "$NGINX_SITE" <<EOF
+server {
+    listen 80;
+    server_name ${domain};
+    return 301 https://\$host\$request_uri;
 }
 
-status_nginx_ws() {
-  clear
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "       STATUS NGINX + TLS + WS"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo
+server {
+    listen 443 ssl http2;
+    server_name ${domain};
 
-  if [[ -f "$NGINX_SITE" ]]; then
-    cat "$NGINX_SITE"
-    echo
-  else
-    echo "Arquivo de configuração não encontrado."
-    echo
-  fi
+    ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
 
-  systemctl status nginx --no-pager
-  echo
-  read -p "Enter para voltar..."
-}
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
 
-restart_nginx_ws() {
-  systemctl restart nginx
-  /bin/loggerapi "NGINX_TLS_RESTART" "nginx reiniciado"
-  echo
-  echo "Nginx reiniciado."
-  echo
-  read -p "Enter para voltar..."
-}
+    location / {
+        return 200 'SSHPLUS AutomBot ARM TLS';
+        add_header Content-Type text/plain;
+    }
 
-remove_nginx_ws() {
-  read -p "Confirma remover configuração Nginx/TLS? [s/N]: " confirm
-  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+    location /ws {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:${ws_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
 
-  rm -f "$NGINX_LINK"
-  rm -f "$NGINX_SITE"
-  systemctl restart nginx >/dev/null 2>&1 || true
-
-  /bin/loggerapi "NGINX_TLS_REMOVE" "configuracao removida"
-
-  echo
-  echo "Configuração removida."
-  echo
-  read -p "Enter para voltar..."
-}
-
-while true; do
-  clear
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "       GERENCIAR NGINX + TLS + WS"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo " [1] Instalar / Reconfigurar"
-  echo " [2] Ver status"
-  echo " [3] Reiniciar"
-  echo " [4] Remover configuração"
-  echo " [0] Voltar"
-  echo
-  read -p "Escolha uma opção: " op
-  case "$op" in
-    1) install_nginx_ws ;;
-    2) status_nginx_ws ;;
-    3) restart_nginx_ws ;;
-    4) remove_nginx_ws ;;
-    0) exit 0 ;;
-    *) echo "Opção inválida."; sleep 1 ;;
-  esac
-done
+    location ${xray_ws_path} {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:${xray_ws_port};
+        proxy_http_version 1.1;
+        proxy
