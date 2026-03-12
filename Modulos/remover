@@ -1,0 +1,23 @@
+#!/bin/bash
+
+LIMIT_DIR="/etc/SSHPlus/limites"
+
+read -p "Usuário a remover: " username
+[[ -z "$username" ]] && echo "Usuário inválido." && exit 1
+
+if ! id "$username" >/dev/null 2>&1; then
+  echo "Usuário não existe."
+  exit 1
+fi
+
+read -p "Confirma remover ${username}? [s/N]: " confirm
+[[ "$confirm" != "s" && "$confirm" != "S" ]] && exit 0
+
+pkill -u "$username" >/dev/null 2>&1 || true
+userdel -f "$username" >/dev/null 2>&1 || exit 1
+rm -f "${LIMIT_DIR}/${username}"
+
+echo
+echo "Usuário removido com sucesso: $username"
+echo
+read -p "Enter para voltar..."
