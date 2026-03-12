@@ -54,6 +54,7 @@ show_header() {
   echo -e "\033[1;33mVersão:\033[0m $(get_version)"
   echo -e "\033[1;33mOnline SSH:\033[0m $(get_online_users)"
   echo -e "\033[1;33mUsuários:\033[0m $(get_total_users)"
+  echo -e "\033[1;33mExpirados:\033[0m $(get_expired_users)"
   echo -e "\033[0;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
 }
 
