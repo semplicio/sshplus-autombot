@@ -179,14 +179,24 @@ install_sockshttp() {
   read -p "Porta do HTTP Proxy [${DEFAULT_PORT}]: " proxy_port
   proxy_port="${proxy_port:-$DEFAULT_PORT}"
 
-  [[ ! "$proxy_port" =~ ^[0-9]+$ ]] && fail "Porta inválida." && return
+  if [[ ! "$proxy_port" =~ ^[0-9]+$ ]]; then
+    fail "Porta inválida."
+    return
+  fi
 
-  install_packages || { fail "Falha ao instalar dependências."; return; }
+  install_packages || {
+    fail "Falha ao instalar dependências."
+    return
+  }
+
   backup_config
   write_meta "$proxy_port" "$host_ref"
   write_squid_config "$proxy_port"
 
-  test_squid_config || { fail "Erro na configuração do Squid."; return; }
+  test_squid_config || {
+    fail "Erro na configuração do Squid."
+    return
+  }
 
   open_firewall_port "$proxy_port"
 
@@ -220,16 +230,30 @@ status_sockshttp() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
 
-  [[ -f "$META_FILE" ]] && echo "Metadados:" && cat "$META_FILE" && echo
-  [[ -f "$SQUID_CONF" ]] && echo "Configuração:" && cat "$SQUID_CONF" && echo
+  if [[ -f "$META_FILE" ]]; then
+    echo "Metadados:"
+    cat "$META_FILE"
+    echo
+  fi
+
+  if [[ -f "$SQUID_CONF" ]]; then
+    echo "Configuração:"
+    cat "$SQUID_CONF"
+    echo
+  fi
 
   systemctl status squid -l --no-pager || true
   echo
   echo "Portas em uso:"
   ss -lntp | grep -E ':3128|:8080|:443|:22 ' || true
   echo
-  [[ -f "$DEBUG_LOG" ]] && echo "Log:" && tail -n 30 "$DEBUG_LOG"
-  echo
+
+  if [[ -f "$DEBUG_LOG" ]]; then
+    echo "Log:"
+    tail -n 30 "$DEBUG_LOG"
+    echo
+  fi
+
   pause
 }
 
@@ -289,12 +313,26 @@ while true; do
   echo " [0] Voltar"
   echo
   read -p "Escolha uma opção: " op
+
   case "$op" in
-    1) install_sockshttp ;;
-    2) status_sockshttp ;;
-    3) restart_sockshttp ;;
-    4) remove_sockshttp ;;
-    0) exit 0 ;;
-    *) echo "Opção inválida."; sleep 1 ;;
+    1)
+      install_sockshttp
+      ;;
+    2)
+      status_sockshttp
+      ;;
+    3)
+      restart_sockshttp
+      ;;
+    4)
+      remove_sockshttp
+      ;;
+    0)
+      exit 0
+      ;;
+    *)
+      echo "Opção inválida."
+      sleep 1
+      ;;
   esac
 done
