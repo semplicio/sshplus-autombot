@@ -85,6 +85,9 @@ show_options() {
   echo " [24] Camuflagem e página fake"
   echo " [25] Painel de conexões"
   echo " [26] Reiniciar serviços de conexão"
+  echo " [27] Adicionar cliente Xray"
+  echo " [28] Listar clientes Xray"
+  echo " [29] Remover cliente Xray"
   echo " [0] Sair"
   echo
 }
@@ -174,6 +177,9 @@ validate_modules() {
     installcamuflagem
     painelconexoes
     reiniciarservicos
+    xrayaddcliente
+    xraylistarclientes
+    xrayremovercliente
   )
 
   for mod in "${mods[@]}"; do
@@ -222,6 +228,9 @@ main_menu() {
       24) clear; run_module installcamuflagem ;;
       25) clear; run_module painelconexoes ;;
       26) clear; run_module reiniciarservicos ;;
+      27) clear; run_module xrayaddcliente ;;
+      28) clear; run_module xraylistarclientes ;;
+      29) clear; run_module xrayremovercliente ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
