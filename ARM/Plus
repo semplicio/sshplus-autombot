@@ -51,6 +51,7 @@ detect_arch() {
 prepare_dirs() {
   mkdir -p "$INSTALL_DIR" "$ETC_DIR" "$TMP_DIR"
   touch "$LOG_FILE"
+  touch /var/log/sshplus.log
 }
 
 download_file() {
@@ -156,6 +157,19 @@ main() {
   install_packages
   prepare_base_files
   install_remote_files
+  main() {
+  clear
+  require_root
+  detect_arch
+  prepare_dirs
+  install_packages
+  prepare_base_files
+  install_remote_files
+  /bin/loggerapi "INSTALL" "Instalacao/atualizacao executada com sucesso"
+  configure_firewall
+  configure_cron
+  show_summary
+}
   configure_firewall
   configure_cron
   show_summary
