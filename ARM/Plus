@@ -2,8 +2,8 @@
 
 set -e
 
-REPO_USER="SEU_USUARIO_GITHUB"
-REPO_NAME="SEU_REPOSITORIO"
+REPO_USER="semplicio"
+REPO_NAME="sshplus-autombot"
 BRANCH="main"
 BASE_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/${BRANCH}"
 
