@@ -1,0 +1,37 @@
+#!/bin/bash
+
+EXPORT_DIR="/root/sshplus-export/payloads"
+TMP_FILE="/tmp/payload_export_preview.txt"
+
+mkdir -p "$EXPORT_DIR"
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "      EXPORTAR PAYLOAD PARA ARQUIVO"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+if [[ ! -x /bin/payloadexport ]]; then
+  echo "Módulo /bin/payloadexport não encontrado."
+  echo
+  read -p "Enter para voltar..."
+  exit 1
+fi
+
+read -p "Nome do arquivo (ex: payload-tim): " export_name
+[[ -z "$export_name" ]] && echo "Nome inválido." && read -p "Enter para voltar..." && exit 1
+
+/bin/payloadexport | tee "$TMP_FILE" >/dev/null
+
+OUT_FILE="${EXPORT_DIR}/${export_name}.txt"
+cp "$TMP_FILE" "$OUT_FILE"
+rm -f "$TMP_FILE"
+
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Payload exportado com sucesso"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Arquivo: $OUT_FILE"
+echo
+/bin/loggerapi "PAYLOAD_EXPORT_FILE" "arquivo=${OUT_FILE}"
+read -p "Enter para voltar..."
