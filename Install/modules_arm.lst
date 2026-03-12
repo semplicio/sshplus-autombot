@@ -43,3 +43,5 @@ payloadexport
 payloadexportfile
 payloadprofiles
 payloadprofileexport
+installtls
+tlsrenew
