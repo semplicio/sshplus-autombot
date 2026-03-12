@@ -1,0 +1,186 @@
+#!/bin/bash
+
+XRAY_DIR="/usr/local/xray"
+CONFIG_DIR="/usr/local/etc/xray"
+CONFIG_FILE="${CONFIG_DIR}/grpc-config.json"
+SERVICE_FILE="/etc/systemd/system/xray-grpc.service"
+
+install_xray_grpc() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "       INSTALAÇÃO XRAY VLESS gRPC"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  read -p "Porta do inbound gRPC [20000]: " grpc_port
+  grpc_port="${grpc_port:-20000}"
+
+  read -p "ServiceName gRPC [grpc]: " grpc_service
+  grpc_service="${grpc_service:-grpc}"
+
+  read -p "UUID (deixe vazio para gerar): " grpc_uuid
+
+  if [[ -z "$grpc_uuid" ]]; then
+    grpc_uuid="$(uuidgen)"
+  fi
+
+  if [[ ! "$grpc_port" =~ ^[0-9]+$ ]]; then
+    echo "Porta inválida."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  apt update -y
+  apt install -y curl unzip jq uuid-runtime
+
+  mkdir -p "$XRAY_DIR"
+  mkdir -p "$CONFIG_DIR"
+
+  curl -L https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64.zip -o /tmp/xray.zip
+  unzip -o /tmp/xray.zip -d "$XRAY_DIR"
+  chmod +x "$XRAY_DIR/xray"
+
+  cat > "$CONFIG_FILE" <<EOF
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "port": ${grpc_port},
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "${grpc_uuid}"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "grpc",
+        "grpcSettings": {
+          "serviceName": "${grpc_service}"
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ]
+}
+EOF
+
+  cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=Xray gRPC Service
+After=network.target
+
+[Service]
+ExecStart=${XRAY_DIR}/xray -config ${CONFIG_FILE}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable xray-grpc
+  systemctl restart xray-grpc
+
+  /bin/loggerapi "XRAY_GRPC_INSTALL" "porta=${grpc_port} serviceName=${grpc_service} uuid=${grpc_uuid}"
+
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Xray gRPC configurado com sucesso"
+  echo "Porta       : ${grpc_port}"
+  echo "ServiceName : ${grpc_service}"
+  echo "UUID        : ${grpc_uuid}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  read -p "Enter para voltar..."
+}
+
+status_xray_grpc() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "         STATUS XRAY gRPC"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  if [[ -f "$CONFIG_FILE" ]]; then
+    cat "$CONFIG_FILE"
+    echo
+  else
+    echo "Configuração não encontrada."
+    echo
+  fi
+
+  systemctl status xray-grpc --no-pager
+  echo
+  read -p "Enter para voltar..."
+}
+
+restart_xray_grpc() {
+  systemctl restart xray-grpc
+  /bin/loggerapi "XRAY_GRPC_RESTART" "servico reiniciado"
+  echo
+  echo "Serviço reiniciado."
+  echo
+  read -p "Enter para voltar..."
+}
+
+stop_xray_grpc() {
+  systemctl stop xray-grpc
+  /bin/loggerapi "XRAY_GRPC_STOP" "servico parado"
+  echo
+  echo "Serviço parado."
+  echo
+  read -p "Enter para voltar..."
+}
+
+remove_xray_grpc() {
+  read -p "Confirma remover Xray gRPC? [s/N]: " confirm
+  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+
+  systemctl stop xray-grpc >/dev/null 2>&1 || true
+  systemctl disable xray-grpc >/dev/null 2>&1 || true
+  rm -f "$SERVICE_FILE"
+  rm -f "$CONFIG_FILE"
+  systemctl daemon-reload
+
+  /bin/loggerapi "XRAY_GRPC_REMOVE" "servico removido"
+
+  echo
+  echo "Xray gRPC removido."
+  echo
+  read -p "Enter para voltar..."
+}
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "         GERENCIAR XRAY gRPC"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Instalar / Reconfigurar"
+  echo " [2] Ver status"
+  echo " [3] Reiniciar"
+  echo " [4] Parar"
+  echo " [5] Remover"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1) install_xray_grpc ;;
+    2) status_xray_grpc ;;
+    3) restart_xray_grpc ;;
+    4) stop_xray_grpc ;;
+    5) remove_xray_grpc ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
