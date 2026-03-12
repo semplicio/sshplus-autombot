@@ -73,6 +73,8 @@ show_options() {
   echo " [12] Ver logs"
   echo " [13] Backup da base"
   echo " [14] Restaurar base"
+  echo " [15] Dashboard"
+  echo " [16] Exportar resumo"
   echo " [0] Sair"
   echo
 }
@@ -150,6 +152,8 @@ validate_modules() {
     verlogs
     backupbase
     restaurarbase
+    dashboardinfo
+    exportarinfo
   )
 
   for mod in "${mods[@]}"; do
@@ -186,6 +190,8 @@ main_menu() {
       12) clear; run_module verlogs ;;
       13) clear; run_module backupbase ;;
       14) clear; run_module restaurarbase ;;
+      15) clear; run_module dashboardinfo ;;
+      16) clear; run_module exportarinfo ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
