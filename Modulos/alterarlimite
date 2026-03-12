@@ -1,0 +1,24 @@
+#!/bin/bash
+
+LIMIT_DIR="/etc/SSHPlus/limites"
+mkdir -p "$LIMIT_DIR"
+
+read -p "Usuário: " username
+[[ -z "$username" ]] && echo "Usuário inválido." && exit 1
+
+if ! id "$username" >/dev/null 2>&1; then
+  echo "Usuário não existe."
+  exit 1
+fi
+
+read -p "Novo limite de conexões: " limit
+[[ ! "$limit" =~ ^[0-9]+$ ]] && echo "Limite inválido." && exit 1
+
+echo "$limit" > "${LIMIT_DIR}/${username}"
+
+echo
+echo "Limite atualizado com sucesso."
+echo "Usuário: $username"
+echo "Limite : $limit"
+echo
+read -p "Enter para voltar..."
