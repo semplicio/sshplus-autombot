@@ -1,0 +1,65 @@
+#!/bin/bash
+
+NGINX_META="/etc/sshplus-nginx-meta.conf"
+PATHS_FILE="/etc/sshplus-payload-paths.conf"
+
+read_meta() {
+  local key="$1"
+  [[ -f "$NGINX_META" ]] || return 0
+  grep -E "^${key}=" "$NGINX_META" | tail -n 1 | cut -d= -f2-
+}
+
+DOMAIN="$(read_meta DOMAIN)"
+WS_PORT="$(read_meta WS_PORT)"
+
+[[ -z "$DOMAIN" ]] && DOMAIN="$(cat /etc/IP 2>/dev/null || echo "SEU_DOMINIO")"
+[[ -z "$WS_PORT" ]] && WS_PORT="443"
+
+show_payload_for_path() {
+  local path="$1"
+
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "PATH: ${path}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  echo "Exemplo de payload:"
+  echo
+  cat <<EOF
+GET ${path} HTTP/1.1
+Host: ${DOMAIN}
+Connection: Upgrade
+Upgrade: websocket
+
+EOF
+  echo "SNI sugerido:"
+  echo "${DOMAIN}"
+  echo
+}
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "        VISUALIZADOR DE PAYLOADS BASE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+echo "Domínio/Host: ${DOMAIN}"
+echo "Porta TLS   : 443"
+echo "Método      : SSH + SSL/TLS + WebSocket"
+echo
+
+if [[ -f "$PATHS_FILE" ]]; then
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    show_payload_for_path "$path"
+  done < "$PATHS_FILE"
+else
+  show_payload_for_path "/ws"
+fi
+
+echo "Observações:"
+echo "- Usuário e senha são do SSH criado na VPS"
+echo "- O app deve usar modo SSH + SSL/TLS"
+echo "- O path precisa existir no Nginx"
+echo "- O SNI normalmente deve ser o domínio configurado"
+echo
+/bin/loggerapi "PAYLOAD_VIEW" "domain=${DOMAIN}"
+read -p "Enter para voltar..."
