@@ -1,0 +1,94 @@
+#!/bin/bash
+
+PROFILE_DIR="/etc/SSHPlus/payload-profiles"
+EXPORT_DIR="/root/sshplus-export/payload-profiles"
+mkdir -p "$EXPORT_DIR"
+
+read_profile() {
+  local file="$1"
+  grep -E "^$2=" "$file" | tail -n 1 | cut -d= -f2-
+}
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "      EXPORTAR PERFIL COMERCIAL"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+read -p "Nome do perfil: " profile_name
+[[ -z "$profile_name" ]] && echo "Nome inválido." && read -p "Enter para voltar..." && exit 1
+
+file="${PROFILE_DIR}/${profile_name}.conf"
+if [[ ! -f "$file" ]]; then
+  echo "Perfil não encontrado."
+  read -p "Enter para voltar..."
+  exit 1
+fi
+
+profile="$(read_profile "$file" PROFILE_NAME)"
+operator="$(read_profile "$file" OPERATOR)"
+app="$(read_profile "$file" APP)"
+host="$(read_profile "$file" HOST)"
+port="$(read_profile "$file" PORT)"
+sni="$(read_profile "$file" SNI)"
+path="$(read_profile "$file" PATH)"
+ua="$(read_profile "$file" USER_AGENT)"
+rotate="$(read_profile "$file" ROTATE)"
+note="$(read_profile "$file" NOTE)"
+
+out_file="${EXPORT_DIR}/${profile}.txt"
+
+{
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "PERFIL COMERCIAL DE PAYLOAD"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Perfil     : ${profile}"
+  echo "Operadora  : ${operator}"
+  echo "Aplicativo : ${app}"
+  echo "Método     : SSH + SSL/TLS"
+  echo "Host       : ${host}"
+  echo "Porta      : ${port}"
+  echo "SNI        : ${sni}"
+  echo "Path       : ${path}"
+  echo "Payload ON : sim"
+  echo
+
+  echo "PAYLOAD:"
+  if [[ "$rotate" == "yes" ]]; then
+    cat <<EOF
+GET ${path} HTTP/1.1
+Host: [rotate=${host};${host}]
+Connection: Upgrade
+Upgrade: websocket
+User-Agent: ${ua}
+
+EOF
+  else
+    cat <<EOF
+GET ${path} HTTP/1.1
+Host: ${host}
+Connection: Upgrade
+Upgrade: websocket
+User-Agent: ${ua}
+
+EOF
+  fi
+
+  echo "OBSERVAÇÕES:"
+  echo "- App alvo: ${app}"
+  echo "- Operadora alvo: ${operator}"
+  echo "- Usuário e senha: do SSH criado na VPS"
+  echo "- Porta TLS: ${port}"
+  echo "- SNI: ${sni}"
+  [[ -n "$note" ]] && echo "- Nota: ${note}"
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+} > "$out_file"
+
+echo
+cat "$out_file"
+echo
+echo "Arquivo exportado: $out_file"
+/bin/loggerapi "PAYLOAD_PROFILE_EXPORT" "profile=${profile} file=${out_file}"
+echo
+read -p "Enter para voltar..."
