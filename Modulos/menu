@@ -96,6 +96,8 @@ show_options() {
   echo " [35] Expiração de clientes Xray"
   echo " [36] Gerenciar paths de payload"
   echo " [37] Ver payloads base"
+  echo " [38] Gerar payload pronto"
+  echo " [39] Exportar payload para arquivo"
   echo " [0] Sair"
   echo
 }
@@ -196,6 +198,8 @@ validate_modules() {
     xrayexpirar
     payloadpaths
     payloadviewer
+    payloadexport
+    payloadexportfile
   )
 
   for mod in "${mods[@]}"; do
@@ -255,6 +259,8 @@ main_menu() {
       35) clear; run_module xrayexpirar ;;
       36) clear; run_module payloadpaths ;;
       37) clear; run_module payloadviewer ;;
+      38) clear; run_module payloadexport ;;
+      39) clear; run_module payloadexportfile ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
