@@ -1,0 +1,21 @@
+#!/bin/bash
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "      DIAGNÓSTICO SOCKSHTTP"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+echo "[PORTAS]"
+ss -lntp | grep -E ':22|:3128' || true
+
+echo
+echo "[ULTIMOS LOGS SQUID]"
+tail -n 30 /var/log/squid/access.log 2>/dev/null || true
+
+echo
+echo "[ULTIMOS LOGS SSH]"
+tail -n 30 /var/log/auth.log 2>/dev/null || true
+
+echo
+read -p "Enter para voltar..."
