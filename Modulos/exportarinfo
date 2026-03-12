@@ -1,0 +1,78 @@
+#!/bin/bash
+
+OUT_DIR="/root/sshplus-export"
+LOG_FILE="/var/log/sshplus.log"
+BACKUP_DIR="/root/sshplus-backup"
+DATE_TAG="$(date +%Y%m%d-%H%M%S)"
+OUT_FILE="${OUT_DIR}/resumo-${DATE_TAG}.txt"
+
+mkdir -p "$OUT_DIR"
+
+get_total_users() {
+  awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | wc -l
+}
+
+get_online_users() {
+  who 2>/dev/null | awk '{print $1}' | sort | uniq | wc -l
+}
+
+get_total_sessions() {
+  ps -eo user=,cmd= | awk '$1!="root" && $0 ~ /sshd:/ {c++} END {print c+0}'
+}
+
+get_expired_users() {
+  local count=0
+  while IFS=: read -r user _ uid _ _ _ _; do
+    [[ "$uid" -lt 1000 ]] && continue
+    [[ "$user" == "nobody" ]] && continue
+
+    exp="$(chage -l "$user" 2>/dev/null | awk -F': ' '/Account expires/ {print $2}')"
+    case "$exp" in
+      ""|never|jamais|Nunca) continue ;;
+    esac
+
+    exp_epoch="$(date -d "$exp" +%s 2>/dev/null || echo 0)"
+    now_epoch="$(date +%s)"
+    [[ "$exp_epoch" -gt 0 && "$exp_epoch" -lt "$now_epoch" ]] && count=$((count + 1))
+  done < /etc/passwd
+  echo "$count"
+}
+
+get_latest_backup() {
+  ls -1t "${BACKUP_DIR}"/sshplus-backup-*.tar.gz 2>/dev/null | head -n 1
+}
+
+{
+  echo "RELATORIO SSHPLUS AUTOMBOT"
+  echo "Gerado em: $(date '+%Y-%m-%d %H:%M:%S')"
+  echo "Hostname: $(hostname 2>/dev/null)"
+  echo "IP: $(cat /etc/IP 2>/dev/null || echo 'indefinido')"
+  echo "Sistema: $(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')"
+  echo "Kernel: $(uname -r)"
+  echo "Arquitetura: $(uname -m)"
+  echo
+  echo "RESUMO OPERACIONAL"
+  echo "Usuarios totais: $(get_total_users)"
+  echo "Usuarios online: $(get_online_users)"
+  echo "Sessoes SSH: $(get_total_sessions)"
+  echo "Usuarios expirados: $(get_expired_users)"
+  echo "Ultimo backup: $(get_latest_backup 2>/dev/null || echo 'nenhum')"
+  echo
+  echo "USUARIOS"
+  awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd
+  echo
+  echo "ULTIMOS LOGS"
+  tail -n 20 "$LOG_FILE" 2>/dev/null || true
+} > "$OUT_FILE"
+
+/bin/loggerapi "INFO_EXPORT" "arquivo=${OUT_FILE}"
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Resumo exportado com sucesso"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Arquivo: $OUT_FILE"
+echo
+ls -lh "$OUT_FILE" 2>/dev/null
+echo
+read -p "Enter para voltar..."
