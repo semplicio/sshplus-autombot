@@ -1,0 +1,23 @@
+#!/bin/bash
+
+LIMIT_DIR="/etc/SSHPlus/limites"
+
+[[ -d "$LIMIT_DIR" ]] || exit 0
+
+for user_limit_file in "$LIMIT_DIR"/*; do
+  [[ -f "$user_limit_file" ]] || continue
+
+  username="$(basename "$user_limit_file")"
+  limit="$(cat "$user_limit_file" 2>/dev/null)"
+
+  [[ -z "$username" || -z "$limit" ]] && continue
+  [[ ! "$limit" =~ ^[0-9]+$ ]] && continue
+
+  active_count="$(ps -eo user=,pid=,cmd= | awk -v u="$username" '$1==u && $0 ~ /sshd:/ {count++} END {print count+0}')"
+
+  if [[ "$active_count" -gt "$limit" ]]; then
+    /bin/killexcesso "$username" "$limit"
+  fi
+done
+
+exit 0
