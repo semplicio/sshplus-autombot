@@ -71,6 +71,8 @@ show_options() {
   echo " [10] Status do sistema"
   echo " [11] Reiniciar serviços"
   echo " [12] Ver logs"
+  echo " [13] Backup da base"
+  echo " [14] Restaurar base"
   echo " [0] Sair"
   echo
 }
@@ -146,6 +148,8 @@ validate_modules() {
     expcheck
     loggerapi
     verlogs
+    backupbase
+    restaurarbase
   )
 
   for mod in "${mods[@]}"; do
@@ -180,6 +184,8 @@ main_menu() {
       10) clear; system_status ;;
       11) clear; restart_services ;;
       12) clear; run_module verlogs ;;
+      13) clear; run_module backupbase ;;
+      14) clear; run_module restaurarbase ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
