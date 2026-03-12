@@ -136,10 +136,13 @@ validate_modules() {
     alterarlimite
     remover
     sshmonitor
+    sessoesusuario
+    listarusuarios
     verifatt
     attscript
     verifilimite
     killexcesso
+    expcheck
   )
 
   for mod in "${mods[@]}"; do
@@ -167,10 +170,12 @@ main_menu() {
       3) clear; run_module alterarlimite ;;
       4) clear; run_module remover ;;
       5) clear; run_module sshmonitor ;;
-      6) clear; check_update ;;
-      7) clear; run_update ;;
-      8) clear; system_status ;;
-      9) clear; restart_services ;;
+      6) clear; run_module sessoesusuario ;;
+      7) clear; run_module listarusuarios ;;
+      8) clear; check_update ;;
+      9) clear; run_update ;;
+      10) clear; system_status ;;
+      11) clear; restart_services ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
