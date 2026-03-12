@@ -1,0 +1,33 @@
+#!/bin/bash
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "      DIAGNÓSTICO SOCKSHTTP"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+echo "[PORTAS EM ESCUTA]"
+ss -lntp | grep -E ':22 |:3128 |:443 |:8080 ' || true
+
+echo
+echo "[STATUS SQUID]"
+systemctl status squid -l --no-pager || true
+
+echo
+echo "[ULTIMOS LOGS DO SQUID]"
+tail -n 50 /var/log/squid/access.log 2>/dev/null || echo "Sem access.log disponível"
+
+echo
+echo "[ULTIMOS LOGS DO SQUID CACHE]"
+tail -n 30 /var/log/squid/cache.log 2>/dev/null || echo "Sem cache.log disponível"
+
+echo
+echo "[ULTIMOS LOGS DO SSH]"
+tail -n 50 /var/log/auth.log 2>/dev/null || journalctl -u ssh -n 50 --no-pager 2>/dev/null || true
+
+echo
+echo "[TESTE HTTP LOCAL VIA HOST]"
+curl -s -o /dev/null -w "HTTP %{http_code}\n" -H "Host: vpn.autombot.com.br" http://127.0.0.1 2>/dev/null || true
+
+echo
+read -p "Enter para voltar..." _
