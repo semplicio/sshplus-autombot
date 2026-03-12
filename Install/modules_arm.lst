@@ -30,3 +30,5 @@ reiniciarservicos
 xrayaddcliente
 xraylistarclientes
 xrayremovercliente
+xraygerarconfig
+xrayexportarcliente
