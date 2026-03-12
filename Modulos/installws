@@ -144,7 +144,7 @@ if [ ! -x "$WSTUNNEL_BIN" ]; then
   exit 127
 fi
 
-exec "$WSTUNNEL_BIN" -s "${WS_BIND}:${WS_PORT}" -t "${WS_TARGET}"
+exec "$WSTUNNEL_BIN" server "ws://${WS_BIND}:${WS_PORT}" --restrict-to "${WS_TARGET}"
 EOF
 
   dos2unix "$WS_START" >/dev/null 2>&1 || true
