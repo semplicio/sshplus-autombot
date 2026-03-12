@@ -1,0 +1,163 @@
+#!/bin/bash
+
+NGINX_META="/etc/sshplus-nginx-meta.conf"
+WS_CONF="/usr/local/wsproxy/ws.conf"
+XRAY_WS_CONF="/usr/local/etc/xray/config.json"
+XRAY_GRPC_CONF="/usr/local/etc/xray/grpc-config.json"
+
+read_meta() {
+  local file="$1"
+  local key="$2"
+  [[ -f "$file" ]] || return 0
+  grep -E "^${key}=" "$file" | tail -n 1 | cut -d= -f2-
+}
+
+DOMAIN="$(read_meta "$NGINX_META" "DOMAIN")"
+WS_PORT="$(read_meta "$NGINX_META" "WS_PORT")"
+XRAY_WS_PATH="$(read_meta "$NGINX_META" "XRAY_WS_PATH")"
+XRAY_GRPC_SERVICE="$(read_meta "$NGINX_META" "XRAY_GRPC_SERVICE")"
+XRAY_GRPC_PATH="$(read_meta "$NGINX_META" "XRAY_GRPC_PATH")"
+
+[[ -z "$XRAY_WS_PATH" ]] && XRAY_WS_PATH="/vmess"
+[[ -z "$XRAY_GRPC_SERVICE" ]] && XRAY_GRPC_SERVICE="grpc"
+[[ -z "$XRAY_GRPC_PATH" ]] && XRAY_GRPC_PATH="/${XRAY_GRPC_SERVICE}/Tun"
+
+get_ip() {
+  cat /etc/IP 2>/dev/null || curl -4 -fsSL ifconfig.me 2>/dev/null || echo "0.0.0.0"
+}
+
+get_ws_internal_port() {
+  local p
+  p="$(read_meta "$WS_CONF" "WS_PORT")"
+  [[ -n "$p" ]] && echo "$p" || echo "8080"
+}
+
+find_xray_client() {
+  local conf="$1"
+  local email="$2"
+
+  python3 - "$conf" "$email" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+conf = Path(sys.argv[1])
+email = sys.argv[2]
+
+if not conf.exists():
+    sys.exit(1)
+
+data = json.loads(conf.read_text())
+if "inbounds" not in data or not data["inbounds"]:
+    sys.exit(2)
+
+inb = data["inbounds"][0]
+proto = inb.get("protocol", "")
+port = inb.get("port", "")
+clients = inb.get("settings", {}).get("clients", [])
+
+for c in clients:
+    if c.get("email") == email:
+        print(f"{proto}|{port}|{c.get('id','')}")
+        sys.exit(0)
+
+sys.exit(3)
+PY
+}
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "      GERAR PACOTE DO CLIENTE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+read -p "Nome/identificação do cliente: " CLIENT_NAME
+[[ -z "$CLIENT_NAME" ]] && echo "Cliente inválido." && read -p "Enter para voltar..." && exit 1
+
+read -p "Usuário SSH (se houver): " SSH_USER
+read -p "Senha SSH (se houver): " SSH_PASS
+read -p "Email/Nome do cliente no Xray (se houver): " XRAY_EMAIL
+
+SERVER_IP="$(get_ip)"
+WS_INTERNAL_PORT="$(get_ws_internal_port)"
+
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "PACOTE DE ACESSO DO CLIENTE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Cliente        : ${CLIENT_NAME}"
+echo "Servidor IP    : ${SERVER_IP}"
+echo "Domínio        : ${DOMAIN}"
+echo
+
+if [[ -n "$SSH_USER" ]]; then
+  echo "ACESSO SSH"
+  echo "Host           : ${DOMAIN:-$SERVER_IP}"
+  echo "Porta          : 22"
+  echo "Usuário        : ${SSH_USER}"
+  echo "Senha          : ${SSH_PASS}"
+  echo
+fi
+
+echo "WEBSOCKET SSH"
+echo "Host           : ${DOMAIN:-$SERVER_IP}"
+echo "Porta externa  : 443"
+echo "Path principal : /ws"
+echo "Porta interna  : ${WS_INTERNAL_PORT}"
+echo
+
+if [[ -n "$XRAY_EMAIL" ]]; then
+  XRAY_WS_DATA="$(find_xray_client "$XRAY_WS_CONF" "$XRAY_EMAIL" || true)"
+  XRAY_GRPC_DATA="$(find_xray_client "$XRAY_GRPC_CONF" "$XRAY_EMAIL" || true)"
+
+  if [[ -n "$XRAY_WS_DATA" ]]; then
+    XRAY_WS_PROTO="$(echo "$XRAY_WS_DATA" | cut -d'|' -f1)"
+    XRAY_WS_PORT_CFG="$(echo "$XRAY_WS_DATA" | cut -d'|' -f2)"
+    XRAY_WS_UUID="$(echo "$XRAY_WS_DATA" | cut -d'|' -f3)"
+
+    echo "XRAY WS"
+    echo "Email          : ${XRAY_EMAIL}"
+    echo "Protocolo      : ${XRAY_WS_PROTO}"
+    echo "Domínio        : ${DOMAIN}"
+    echo "Porta externa  : 443"
+    echo "Path           : ${XRAY_WS_PATH}"
+    echo "UUID           : ${XRAY_WS_UUID}"
+    echo "TLS            : true"
+    echo
+  fi
+
+  if [[ -n "$XRAY_GRPC_DATA" ]]; then
+    XRAY_GRPC_PROTO="$(echo "$XRAY_GRPC_DATA" | cut -d'|' -f1)"
+    XRAY_GRPC_PORT_CFG="$(echo "$XRAY_GRPC_DATA" | cut -d'|' -f2)"
+    XRAY_GRPC_UUID="$(echo "$XRAY_GRPC_DATA" | cut -d'|' -f3)"
+
+    echo "XRAY gRPC"
+    echo "Email          : ${XRAY_EMAIL}"
+    echo "Protocolo      : ${XRAY_GRPC_PROTO}"
+    echo "Domínio        : ${DOMAIN}"
+    echo "Porta externa  : 443"
+    echo "ServiceName    : ${XRAY_GRPC_SERVICE}"
+    echo "Path Proxy     : ${XRAY_GRPC_PATH}"
+    echo "UUID           : ${XRAY_GRPC_UUID}"
+    echo "TLS            : true"
+    echo
+  fi
+fi
+
+if systemctl list-unit-files | grep -q '^openvpn\.' || systemctl list-unit-files | grep -q '^openvpn@'; then
+  echo "OPENVPN"
+  echo "Status         : instalado"
+  echo "Observação     : verificar certificados e arquivo .ovpn"
+  echo
+fi
+
+echo "OBSERVAÇÕES"
+echo "- Porta HTTPS/TLS principal: 443"
+echo "- Endpoint WS SSH principal: /ws"
+echo "- Use domínio apontado corretamente para a VPS"
+echo "- Conferir status no menu em: Painel de conexões"
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+/bin/loggerapi "CLIENT_PACKAGE_GENERATE" "cliente=${CLIENT_NAME} ssh_user=${SSH_USER} xray_email=${XRAY_EMAIL}"
+echo
+read -p "Enter para voltar..."
