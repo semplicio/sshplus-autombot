@@ -1,0 +1,63 @@
+#!/bin/bash
+
+XRAY_WS_CONF="/usr/local/etc/xray/config.json"
+XRAY_GRPC_CONF="/usr/local/etc/xray/grpc-config.json"
+
+show_clients() {
+  local conf="$1"
+  local label="$2"
+
+  if [[ ! -f "$conf" ]]; then
+    echo "Configuração não encontrada: $label"
+    echo
+    return
+  fi
+
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "CLIENTES ${label}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  python3 - "$conf" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+conf = Path(sys.argv[1])
+data = json.loads(conf.read_text())
+
+if "inbounds" not in data or not data["inbounds"]:
+    print("Nenhum inbound encontrado.")
+    sys.exit(0)
+
+inb = data["inbounds"][0]
+proto = inb.get("protocol", "")
+clients = inb.get("settings", {}).get("clients", [])
+
+print(f"PROTOCOLO: {proto}")
+print()
+
+if not clients:
+    print("Nenhum cliente cadastrado.")
+    sys.exit(0)
+
+print(f"{'EMAIL':<30} {'UUID':<40}")
+print("-" * 72)
+for c in clients:
+    email = c.get("email", "-")
+    uuid = c.get("id", "-")
+    print(f"{email:<30} {uuid:<40}")
+PY
+
+  echo
+}
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "         LISTAR CLIENTES XRAY"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+show_clients "$XRAY_WS_CONF" "XRAY WS"
+show_clients "$XRAY_GRPC_CONF" "XRAY gRPC"
+
+read -p "Enter para voltar..."
