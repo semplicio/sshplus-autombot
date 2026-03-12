@@ -1,0 +1,41 @@
+#!/bin/bash
+
+WS_DIR="/usr/local/wsproxy"
+SERVICE_FILE="/etc/systemd/system/wsproxy.service"
+
+mkdir -p "$WS_DIR"
+
+apt-get update -y
+apt-get install -y nodejs npm
+
+npm install -g wstunnel
+
+cat > "$WS_DIR/start.sh" <<'EOF'
+#!/bin/bash
+/usr/bin/wstunnel -s 0.0.0.0:8080 -t 127.0.0.1:22
+EOF
+
+chmod +x "$WS_DIR/start.sh"
+
+cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=SSH WebSocket Proxy
+After=network.target
+
+[Service]
+ExecStart=${WS_DIR}/start.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable wsproxy
+systemctl restart wsproxy
+
+/bin/loggerapi "WS_INSTALL" "websocket proxy instalado porta=8080"
+
+echo
+echo "WebSocket SSH ativo na porta 8080"
+read -p "Enter para voltar..."
