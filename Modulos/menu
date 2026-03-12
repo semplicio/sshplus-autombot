@@ -90,6 +90,8 @@ show_options() {
   echo " [29] Remover cliente Xray"
   echo " [30] Gerar config de cliente Xray"
   echo " [31] Exportar config de cliente Xray"
+  echo " [32] Gerar pacote do cliente"
+  echo " [33] Exportar pacote do cliente"
   echo " [0] Sair"
   echo
 }
@@ -184,6 +186,8 @@ validate_modules() {
     xrayremovercliente
     xraygerarconfig
     xrayexportarcliente
+    gerarpacotecliente
+    exportarpacotecliente
   )
 
   for mod in "${mods[@]}"; do
@@ -237,6 +241,8 @@ main_menu() {
       29) clear; run_module xrayremovercliente ;;
       30) clear; run_module xraygerarconfig ;;
       31) clear; run_module xrayexportarcliente ;;
+      32) clear; run_module gerarpacotecliente ;;
+      33) clear; run_module exportarpacotecliente ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
