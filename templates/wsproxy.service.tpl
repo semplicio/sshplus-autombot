@@ -1,5 +1,5 @@
 [Unit]
-Description=SSHPLUS AutoBot WebSocket Proxy
+Description=SSH WebSocket Proxy
 After=network-online.target
 Wants=network-online.target
 
