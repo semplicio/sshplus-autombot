@@ -1,0 +1,134 @@
+#!/bin/bash
+
+NGINX_META="/etc/sshplus-nginx-meta.conf"
+PATHS_FILE="/etc/sshplus-payload-paths.conf"
+
+read_meta() {
+  local key="$1"
+  [[ -f "$NGINX_META" ]] || return 0
+  grep -E "^${key}=" "$NGINX_META" | tail -n 1 | cut -d= -f2-
+}
+
+DOMAIN="$(read_meta DOMAIN)"
+[[ -z "$DOMAIN" ]] && DOMAIN="$(cat /etc/IP 2>/dev/null || echo "SEU_DOMINIO")"
+
+choose_path() {
+  local paths=()
+  local i=1
+
+  if [[ -f "$PATHS_FILE" ]]; then
+    while IFS= read -r p; do
+      [[ -z "$p" ]] && continue
+      paths+=("$p")
+    done < "$PATHS_FILE"
+  fi
+
+  if [[ "${#paths[@]}" -eq 0 ]]; then
+    paths=("/ws")
+  fi
+
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      EXPORTAR PAYLOAD PRONTO"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  echo "Selecione o path:"
+  echo
+
+  for p in "${paths[@]}"; do
+    echo " [$i] $p"
+    i=$((i + 1))
+  done
+  echo " [0] Voltar"
+  echo
+
+  read -p "Escolha: " pathop
+
+  if [[ "$pathop" == "0" ]]; then
+    exit 0
+  fi
+
+  if ! [[ "$pathop" =~ ^[0-9]+$ ]]; then
+    echo "Opção inválida."
+    sleep 1
+    choose_path
+    return
+  fi
+
+  idx=$((pathop - 1))
+  if [[ "$idx" -lt 0 || "$idx" -ge "${#paths[@]}" ]]; then
+    echo "Opção inválida."
+    sleep 1
+    choose_path
+    return
+  fi
+
+  SELECTED_PATH="${paths[$idx]}"
+}
+
+generate_payload() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "        PAYLOAD GERADO"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  read -p "Host/SNI [${DOMAIN}]: " user_sni
+  user_sni="${user_sni:-$DOMAIN}"
+
+  read -p "User-Agent [Googlebot/2.1]: " user_agent
+  user_agent="${user_agent:-Googlebot/2.1}"
+
+  read -p "Modo [1=normal 2=rotate host] (padrao 1): " mode
+  mode="${mode:-1}"
+
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "CONFIGURAÇÃO BASE PARA APP"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Método       : SSH + SSL/TLS"
+  echo "Host         : ${DOMAIN}"
+  echo "Porta        : 443"
+  echo "SNI          : ${user_sni}"
+  echo "Path         : ${SELECTED_PATH}"
+  echo "CustomPayload: ON"
+  echo
+
+  if [[ "$mode" == "2" ]]; then
+    echo "PAYLOAD:"
+    cat <<EOF
+GET ${SELECTED_PATH} HTTP/1.1
+Host: [rotate=${DOMAIN};${DOMAIN}]
+Connection: Upgrade
+Upgrade: websocket
+User-Agent: ${user_agent}
+
+EOF
+  else
+    echo "PAYLOAD:"
+    cat <<EOF
+GET ${SELECTED_PATH} HTTP/1.1
+Host: ${DOMAIN}
+Connection: Upgrade
+Upgrade: websocket
+User-Agent: ${user_agent}
+
+EOF
+  fi
+
+  echo "OBSERVAÇÕES:"
+  echo "- Método no app: SSH + SSL/TLS"
+  echo "- Porta: 443"
+  echo "- SNI: ${user_sni}"
+  echo "- Usuário e senha: os do SSH criado na VPS"
+  echo "- O path precisa existir no Nginx"
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  /bin/loggerapi "PAYLOAD_EXPORT_VIEW" "domain=${DOMAIN} path=${SELECTED_PATH} sni=${user_sni}"
+  echo
+  read -p "Enter para voltar..."
+}
+
+choose_path
+generate_payload
