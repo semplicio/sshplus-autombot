@@ -2,22 +2,52 @@
 
 WS_DIR="/usr/local/wsproxy"
 SERVICE_FILE="/etc/systemd/system/wsproxy.service"
+CONFIG_FILE="${WS_DIR}/ws.conf"
 
-mkdir -p "$WS_DIR"
+install_ws() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      INSTALAÇÃO WEBSOCKET SSH"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
 
-apt-get update -y
-apt-get install -y nodejs npm
+  read -p "Porta do WebSocket [8080]: " ws_port
+  ws_port="${ws_port:-8080}"
 
-npm install -g wstunnel
+  read -p "Host de bind [0.0.0.0]: " ws_bind
+  ws_bind="${ws_bind:-0.0.0.0}"
 
-cat > "$WS_DIR/start.sh" <<'EOF'
-#!/bin/bash
-/usr/bin/wstunnel -s 0.0.0.0:8080 -t 127.0.0.1:22
+  read -p "Destino interno [127.0.0.1:22]: " ws_target
+  ws_target="${ws_target:-127.0.0.1:22}"
+
+  if [[ ! "$ws_port" =~ ^[0-9]+$ ]]; then
+    echo "Porta inválida."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  apt update -y
+  apt install -y nodejs npm
+
+  npm install -g wstunnel
+
+  mkdir -p "$WS_DIR"
+
+  cat > "$CONFIG_FILE" <<EOF
+WS_PORT=${ws_port}
+WS_BIND=${ws_bind}
+WS_TARGET=${ws_target}
 EOF
 
-chmod +x "$WS_DIR/start.sh"
+  cat > "$WS_DIR/start.sh" <<'EOF'
+#!/bin/bash
+source /usr/local/wsproxy/ws.conf
+exec /usr/bin/wstunnel -s ${WS_BIND}:${WS_PORT} -t ${WS_TARGET}
+EOF
 
-cat > "$SERVICE_FILE" <<EOF
+  chmod +x "$WS_DIR/start.sh"
+
+  cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=SSH WebSocket Proxy
 After=network.target
@@ -25,17 +55,103 @@ After=network.target
 [Service]
 ExecStart=${WS_DIR}/start.sh
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable wsproxy
-systemctl restart wsproxy
+  systemctl daemon-reload
+  systemctl enable wsproxy
+  systemctl restart wsproxy
 
-/bin/loggerapi "WS_INSTALL" "websocket proxy instalado porta=8080"
+  /bin/loggerapi "WS_INSTALL" "porta=${ws_port} bind=${ws_bind} target=${ws_target}"
 
-echo
-echo "WebSocket SSH ativo na porta 8080"
-read -p "Enter para voltar..."
+  echo
+  echo "WebSocket configurado com sucesso."
+  echo "Porta  : ${ws_port}"
+  echo "Bind   : ${ws_bind}"
+  echo "Destino: ${ws_target}"
+  echo
+  read -p "Enter para voltar..."
+}
+
+status_ws() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "         STATUS WEBSOCKET SSH"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  if [[ -f "$CONFIG_FILE" ]]; then
+    cat "$CONFIG_FILE"
+    echo
+  else
+    echo "Configuração não encontrada."
+    echo
+  fi
+
+  systemctl status wsproxy --no-pager
+  echo
+  read -p "Enter para voltar..."
+}
+
+restart_ws() {
+  systemctl restart wsproxy
+  /bin/loggerapi "WS_RESTART" "servico reiniciado"
+  echo
+  echo "Serviço reiniciado."
+  echo
+  read -p "Enter para voltar..."
+}
+
+stop_ws() {
+  systemctl stop wsproxy
+  /bin/loggerapi "WS_STOP" "servico parado"
+  echo
+  echo "Serviço parado."
+  echo
+  read -p "Enter para voltar..."
+}
+
+remove_ws() {
+  read -p "Confirma remover WebSocket SSH? [s/N]: " confirm
+  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+
+  systemctl stop wsproxy >/dev/null 2>&1 || true
+  systemctl disable wsproxy >/dev/null 2>&1 || true
+  rm -f "$SERVICE_FILE"
+  rm -rf "$WS_DIR"
+  systemctl daemon-reload
+
+  /bin/loggerapi "WS_REMOVE" "websocket removido"
+
+  echo
+  echo "WebSocket removido."
+  echo
+  read -p "Enter para voltar..."
+}
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "         GERENCIAR WEBSOCKET SSH"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Instalar / Reconfigurar"
+  echo " [2] Ver status"
+  echo " [3] Reiniciar"
+  echo " [4] Parar"
+  echo " [5] Remover"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1) install_ws ;;
+    2) status_ws ;;
+    3) restart_ws ;;
+    4) stop_ws ;;
+    5) remove_ws ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
