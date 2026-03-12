@@ -1,31 +1,72 @@
 #!/bin/bash
 
-apt update -y
-apt install -y curl unzip
-
 XRAY_DIR="/usr/local/xray"
+CONFIG_DIR="/usr/local/etc/xray"
+CONFIG_FILE="${CONFIG_DIR}/config.json"
+SERVICE_FILE="/etc/systemd/system/xray.service"
 
-mkdir -p "$XRAY_DIR"
+install_xray() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "         INSTALAÇÃO XRAY WS"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
 
-curl -L https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64.zip -o /tmp/xray.zip
+  read -p "Porta do inbound [10000]: " xray_port
+  xray_port="${xray_port:-10000}"
 
-unzip /tmp/xray.zip -d "$XRAY_DIR"
+  read -p "Path WebSocket [/vmess]: " xray_path
+  xray_path="${xray_path:-/vmess}"
 
-chmod +x "$XRAY_DIR/xray"
+  read -p "Protocolo [vmess/vless] (padrao vmess): " xray_proto
+  xray_proto="${xray_proto:-vmess}"
 
-cat > /usr/local/etc/xray/config.json <<EOF
+  if [[ ! "$xray_port" =~ ^[0-9]+$ ]]; then
+    echo "Porta inválida."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  if [[ "$xray_proto" != "vmess" && "$xray_proto" != "vless" ]]; then
+    echo "Protocolo inválido."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  apt update -y
+  apt install -y curl unzip jq uuid-runtime
+
+  mkdir -p "$XRAY_DIR"
+  mkdir -p "$CONFIG_DIR"
+
+  curl -L https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64.zip -o /tmp/xray.zip
+  unzip -o /tmp/xray.zip -d "$XRAY_DIR"
+  chmod +x "$XRAY_DIR/xray"
+
+  uuid="$(uuidgen)"
+
+  if [[ "$xray_proto" == "vmess" ]]; then
+    cat > "$CONFIG_FILE" <<EOF
 {
+  "log": {
+    "loglevel": "warning"
+  },
   "inbounds": [
     {
-      "port": 10000,
+      "port": ${xray_port},
       "protocol": "vmess",
       "settings": {
-        "clients": []
+        "clients": [
+          {
+            "id": "${uuid}",
+            "alterId": 0
+          }
+        ]
       },
       "streamSettings": {
         "network": "ws",
         "wsSettings": {
-          "path": "/vmess"
+          "path": "${xray_path}"
         }
       }
     }
@@ -38,26 +79,149 @@ cat > /usr/local/etc/xray/config.json <<EOF
   ]
 }
 EOF
+  else
+    cat > "$CONFIG_FILE" <<EOF
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "port": ${xray_port},
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "${uuid}"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "${xray_path}"
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ]
+}
+EOF
+  fi
 
-cat > /etc/systemd/system/xray.service <<EOF
+  cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Xray Service
 After=network.target
 
 [Service]
-ExecStart=/usr/local/xray/xray -config /usr/local/etc/xray/config.json
+ExecStart=${XRAY_DIR}/xray -config ${CONFIG_FILE}
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable xray
-systemctl start xray
+  systemctl daemon-reload
+  systemctl enable xray
+  systemctl restart xray
 
-/bin/loggerapi "XRAY_INSTALL" "xray instalado porta=10000 ws=/vmess"
+  /bin/loggerapi "XRAY_INSTALL" "protocolo=${xray_proto} porta=${xray_port} path=${xray_path} uuid=${uuid}"
 
-echo
-echo "Xray instalado"
-read -p "Enter para voltar..."
+  echo
+  echo "Xray configurado com sucesso."
+  echo "Protocolo: ${xray_proto}"
+  echo "Porta    : ${xray_port}"
+  echo "Path     : ${xray_path}"
+  echo "UUID     : ${uuid}"
+  echo
+  read -p "Enter para voltar..."
+}
+
+status_xray() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "            STATUS XRAY"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  if [[ -f "$CONFIG_FILE" ]]; then
+    cat "$CONFIG_FILE"
+    echo
+  else
+    echo "Configuração não encontrada."
+    echo
+  fi
+
+  systemctl status xray --no-pager
+  echo
+  read -p "Enter para voltar..."
+}
+
+restart_xray() {
+  systemctl restart xray
+  /bin/loggerapi "XRAY_RESTART" "servico reiniciado"
+  echo
+  echo "Serviço reiniciado."
+  echo
+  read -p "Enter para voltar..."
+}
+
+stop_xray() {
+  systemctl stop xray
+  /bin/loggerapi "XRAY_STOP" "servico parado"
+  echo
+  echo "Serviço parado."
+  echo
+  read -p "Enter para voltar..."
+}
+
+remove_xray() {
+  read -p "Confirma remover Xray? [s/N]: " confirm
+  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+
+  systemctl stop xray >/dev/null 2>&1 || true
+  systemctl disable xray >/dev/null 2>&1 || true
+  rm -f "$SERVICE_FILE"
+  rm -rf "$XRAY_DIR"
+  rm -rf "$CONFIG_DIR"
+  systemctl daemon-reload
+
+  /bin/loggerapi "XRAY_REMOVE" "xray removido"
+
+  echo
+  echo "Xray removido."
+  echo
+  read -p "Enter para voltar..."
+}
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "            GERENCIAR XRAY"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Instalar / Reconfigurar"
+  echo " [2] Ver status"
+  echo " [3] Reiniciar"
+  echo " [4] Parar"
+  echo " [5] Remover"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1) install_xray ;;
+    2) status_xray ;;
+    3) restart_xray ;;
+    4) stop_xray ;;
+    5) remove_xray ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
