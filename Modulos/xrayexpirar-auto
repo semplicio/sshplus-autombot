@@ -1,0 +1,73 @@
+#!/bin/bash
+
+META_DIR="/etc/SSHPlus/xray-clientes"
+XRAY_WS_CONF="/usr/local/etc/xray/config.json"
+XRAY_GRPC_CONF="/usr/local/etc/xray/grpc-config.json"
+
+mkdir -p "$META_DIR"
+
+remove_client_from_conf() {
+  local conf="$1"
+  local email="$2"
+
+  python3 - "$conf" "$email" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+conf = Path(sys.argv[1])
+email = sys.argv[2]
+
+if not conf.exists():
+    sys.exit(1)
+
+data = json.loads(conf.read_text())
+if "inbounds" not in data or not data["inbounds"]:
+    sys.exit(2)
+
+inb = data["inbounds"][0]
+settings = inb.setdefault("settings", {})
+clients = settings.setdefault("clients", [])
+
+before = len(clients)
+clients = [c for c in clients if c.get("email") != email]
+after = len(clients)
+
+if before == after:
+    sys.exit(3)
+
+settings["clients"] = clients
+conf.write_text(json.dumps(data, indent=2))
+sys.exit(0)
+PY
+}
+
+now_epoch="$(date +%s)"
+
+for f in "${META_DIR}"/*.conf; do
+  [[ -f "$f" ]] || continue
+
+  email="$(grep '^EMAIL=' "$f" | cut -d= -f2-)"
+  service="$(grep '^SERVICE=' "$f" | cut -d= -f2-)"
+  status="$(grep '^STATUS=' "$f" | cut -d= -f2-)"
+  expire_date="$(grep '^EXPIRE_DATE=' "$f" | cut -d= -f2-)"
+
+  [[ -z "$email" || -z "$service" || -z "$expire_date" ]] && continue
+  [[ "$status" == "expired" ]] && continue
+
+  exp_epoch="$(date -d "$expire_date" +%s 2>/dev/null || echo 0)"
+  [[ "$exp_epoch" -eq 0 ]] && continue
+
+  if [[ "$exp_epoch" -lt "$now_epoch" ]]; then
+    if [[ "$service" == "xray_ws" ]]; then
+      remove_client_from_conf "$XRAY_WS_CONF" "$email" && systemctl restart xray >/dev/null 2>&1 || true
+    elif [[ "$service" == "xray_grpc" ]]; then
+      remove_client_from_conf "$XRAY_GRPC_CONF" "$email" && systemctl restart xray-grpc >/dev/null 2>&1 || true
+    fi
+
+    sed -i 's/^STATUS=.*/STATUS=expired/' "$f"
+    /bin/loggerapi "XRAY_CLIENT_EXPIRE_AUTO" "email=${email} service=${service} expire_date=${expire_date}"
+  fi
+done
+
+exit 0
