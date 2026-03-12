@@ -94,6 +94,8 @@ show_options() {
   echo " [33] Exportar pacote do cliente"
   echo " [34] Gestão de planos Xray"
   echo " [35] Expiração de clientes Xray"
+  echo " [36] Gerenciar paths de payload"
+  echo " [37] Ver payloads base"
   echo " [0] Sair"
   echo
 }
@@ -192,6 +194,8 @@ validate_modules() {
     exportarpacotecliente
     xrayplanos
     xrayexpirar
+    payloadpaths
+    payloadviewer
   )
 
   for mod in "${mods[@]}"; do
@@ -249,6 +253,8 @@ main_menu() {
       33) clear; run_module exportarpacotecliente ;;
       34) clear; run_module xrayplanos ;;
       35) clear; run_module xrayexpirar ;;
+      36) clear; run_module payloadpaths ;;
+      37) clear; run_module payloadviewer ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
