@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -e
+
+UPDATE_URL="https://raw.githubusercontent.com/semplicio/sshplus-autombot/main/ARM/Plus"
+TMP_INSTALLER="/tmp/sshplus_update_plus.sh"
+
+echo "Iniciando atualização do SSHPLUS AutomBot ARM..."
+rm -f "$TMP_INSTALLER"
+
+if ! curl -fsSL "$UPDATE_URL" -o "$TMP_INSTALLER"; then
+    echo "Erro ao baixar o instalador de atualização."
+    exit 1
+fi
+
+chmod 755 "$TMP_INSTALLER"
+bash "$TMP_INSTALLER"
