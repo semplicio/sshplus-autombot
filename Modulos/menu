@@ -126,7 +126,33 @@ run_module() {
   fi
 }
 
+validate_modules() {
+  local missing=0
+  local mods=(
+    criarusuario
+    alterarsenha
+    alterarlimite
+    remover
+    sshmonitor
+    verifatt
+    attscript
+  )
+
+  for mod in "${mods[@]}"; do
+    if [[ ! -x "/bin/$mod" ]]; then
+      echo "Módulo ausente: /bin/$mod"
+      missing=1
+    fi
+  done
+
+  if [[ "$missing" -eq 1 ]]; then
+    echo
+    read -p "Alguns módulos estão ausentes. Pressione Enter para continuar..."
+  fi
+}
+
 main_menu() {
+  validate_modules
   while true; do
     show_header
     show_options
