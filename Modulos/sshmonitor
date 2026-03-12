@@ -1,35 +1,33 @@
 #!/bin/bash
 
 clear
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "                 MONITOR SSH ONLINE"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "                         MONITOR SSH"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 
-sessions="$(ps -eo user,pid,cmd | grep '[s]shd:' | grep -v root)"
+printf "%-20s %-10s %-50s\n" "USUARIO" "PID" "PROCESSO"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-if [[ -z "$sessions" ]]; then
+data="$(ps -eo user=,pid=,cmd= | grep '[s]shd:' | grep -v root)"
+
+if [[ -z "$data" ]]; then
   echo "Nenhuma sessão SSH ativa."
-  echo
-  read -p "Enter para voltar..."
-  exit 0
+else
+  echo "$data" | while read -r user pid cmd; do
+    printf "%-20s %-10s %-50s\n" "$user" "$pid" "$cmd"
+  done
 fi
 
-printf "%-20s %-10s %-40s\n" "USUARIO" "PID" "PROCESSO"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Sessões via who:"
+echo
 
-echo "$sessions" | awk '
-{
-  user=$1
-  pid=$2
-  $1=""; $2=""
-  sub(/^  */, "", $0)
-  printf "%-20s %-10s %-40s\n", user, pid, $0
-}
-'
+who 2>/dev/null || true
 
 echo
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Total de sessões: $(echo "$sessions" | wc -l)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Total de processos sshd de usuários: $(ps -eo user=,cmd= | awk '$1!="root" && $0 ~ /sshd:/ {c++} END {print c+0}')"
 echo
 read -p "Enter para voltar..."
