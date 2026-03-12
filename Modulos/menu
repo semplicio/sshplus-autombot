@@ -77,6 +77,9 @@ show_options() {
   echo " [16] Exportar resumo"
   echo " [17] Ver JSON status"
   echo " [18] Exportar JSON"
+  echo " [19] Instalar WebSocket SSH"
+  echo " [20] Instalar Xray WS"
+  echo " [21] Instalar OpenVPN"
   echo " [0] Sair"
   echo
 }
