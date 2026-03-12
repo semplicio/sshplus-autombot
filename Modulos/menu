@@ -75,6 +75,8 @@ show_options() {
   echo " [14] Restaurar base"
   echo " [15] Dashboard"
   echo " [16] Exportar resumo"
+  echo " [17] Ver JSON status"
+  echo " [18] Exportar JSON"
   echo " [0] Sair"
   echo
 }
@@ -154,6 +156,8 @@ validate_modules() {
     restaurarbase
     dashboardinfo
     exportarinfo
+    jsonstatus
+    exportarjson
   )
 
   for mod in "${mods[@]}"; do
@@ -192,6 +196,8 @@ main_menu() {
       14) clear; run_module restaurarbase ;;
       15) clear; run_module dashboardinfo ;;
       16) clear; run_module exportarinfo ;;
+      17) clear; run_module jsonstatus ;;
+      18) clear; run_module exportarjson ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
