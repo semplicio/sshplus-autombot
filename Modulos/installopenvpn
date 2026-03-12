@@ -1,0 +1,13 @@
+#!/bin/bash
+
+apt update -y
+apt install -y openvpn easy-rsa
+
+make-cadir ~/openvpn-ca
+
+/bin/loggerapi "OPENVPN_INSTALL" "openvpn instalado"
+
+echo
+echo "OpenVPN instalado."
+echo "Configure certificados em ~/openvpn-ca"
+read -p "Enter para voltar..."
