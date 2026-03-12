@@ -1,0 +1,37 @@
+#!/bin/bash
+
+EXPORT_DIR="/root/sshplus-export/pacotes-clientes"
+TMP_FILE="/tmp/cliente_pacote.txt"
+
+mkdir -p "$EXPORT_DIR"
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "     EXPORTAR PACOTE DO CLIENTE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+if [[ ! -x /bin/gerarpacotecliente ]]; then
+  echo "Módulo /bin/gerarpacotecliente não encontrado."
+  echo
+  read -p "Enter para voltar..."
+  exit 1
+fi
+
+read -p "Nome do arquivo de exportação (ex: cliente-joao): " export_name
+[[ -z "$export_name" ]] && echo "Nome inválido." && read -p "Enter para voltar..." && exit 1
+
+/bin/gerarpacotecliente | tee "$TMP_FILE" >/dev/null
+
+OUT_FILE="${EXPORT_DIR}/${export_name}.txt"
+cp "$TMP_FILE" "$OUT_FILE"
+rm -f "$TMP_FILE"
+
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Pacote exportado com sucesso"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Arquivo: $OUT_FILE"
+echo
+/bin/loggerapi "CLIENT_PACKAGE_EXPORT" "arquivo=${OUT_FILE}"
+read -p "Enter para voltar..."
