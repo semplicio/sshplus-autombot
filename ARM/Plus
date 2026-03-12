@@ -123,6 +123,18 @@ configure_firewall() {
   fi
 }
 
+configure_cron() {
+  msg "Configurando verificação automática de limites..."
+
+  local cron_file="/etc/cron.d/sshplus-limites"
+  cat > "$cron_file" <<EOF
+*/1 * * * * root /bin/verifilimite >/dev/null 2>&1
+EOF
+
+  chmod 644 "$cron_file"
+  systemctl restart cron >/dev/null 2>&1 || service cron restart >/dev/null 2>&1 || true
+}
+
 show_summary() {
   clear
   echo -e "\033[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
@@ -144,6 +156,7 @@ main() {
   prepare_base_files
   install_remote_files
   configure_firewall
+  configure_cron
   show_summary
 }
 
