@@ -9,9 +9,10 @@ BASE_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/${BRANCH}"
 
 INSTALL_DIR="/usr/local/lib/sshplus"
 BIN_DIR="/bin"
+ETC_DIR="/etc/SSHPlus"
 TMP_DIR="/tmp/sshplus-install"
-VERSION_FILE="${INSTALL_DIR}/versao"
 LOG_FILE="/var/log/sshplus-install.log"
+VERSION_FILE="${INSTALL_DIR}/versao"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -36,25 +37,20 @@ require_root() {
 
 detect_arch() {
   ARCH="$(uname -m)"
-  if [[ "$ARCH" != "aarch64" && "$ARCH" != "arm64" ]]; then
-    err "Este instalador ARM exige arquitetura aarch64/arm64. Detectado: $ARCH"
-    exit 1
-  fi
+  case "$ARCH" in
+    aarch64|arm64)
+      msg "Arquitetura ARM detectada: $ARCH"
+      ;;
+    *)
+      err "Este instalador foi preparado para VPS ARM (aarch64/arm64). Detectado: $ARCH"
+      exit 1
+      ;;
+  esac
 }
 
 prepare_dirs() {
-  mkdir -p "$INSTALL_DIR" "$TMP_DIR"
+  mkdir -p "$INSTALL_DIR" "$ETC_DIR" "$TMP_DIR"
   touch "$LOG_FILE"
-}
-
-check_dependencies() {
-  msg "Atualizando índices de pacotes..."
-  apt-get update -y >>"$LOG_FILE" 2>&1
-
-  msg "Instalando dependências básicas..."
-  apt-get install -y \
-    curl wget unzip tar jq bc screen nano lsof net-tools dos2unix nload figlet \
-    python3 python3-pip socat ca-certificates >>"$LOG_FILE" 2>&1
 }
 
 download_file() {
@@ -67,8 +63,35 @@ download_file() {
   fi
 }
 
-install_core_files() {
-  msg "Baixando arquivos principais..."
+install_packages() {
+  msg "Atualizando repositórios..."
+  apt-get update -y >>"$LOG_FILE" 2>&1
+
+  msg "Instalando dependências..."
+  apt-get install -y \
+    bc screen nano unzip lsof net-tools dos2unix nload jq curl wget figlet \
+    python3 python3-pip socat at tar cron >>"$LOG_FILE" 2>&1 || {
+      err "Falha ao instalar dependências. Veja: $LOG_FILE"
+      exit 1
+    }
+
+  pip3 install speedtest-cli >>"$LOG_FILE" 2>&1 || true
+}
+
+prepare_base_files() {
+  msg "Preparando base do sistema..."
+
+  [[ -f /etc/IP ]] || curl -4 -fsSL ifconfig.me >/etc/IP 2>/dev/null || echo "0.0.0.0" >/etc/IP
+  [[ -f /etc/autostart ]] || touch /etc/autostart
+  [[ -f "${ETC_DIR}/Exp" ]] || echo "0" > "${ETC_DIR}/Exp"
+
+  if [[ ! -f "$HOME/usuarios.db" ]]; then
+    awk -F: '$3 >= 1000 { print $1 " 1" }' /etc/passwd | grep -v '^nobody' > "$HOME/usuarios.db" || true
+  fi
+}
+
+install_remote_files() {
+  msg "Baixando arquivos do repositório..."
 
   download_file "${BASE_URL}/Install/versao" "${INSTALL_DIR}/versao"
   download_file "${BASE_URL}/Modulos/menu" "${BIN_DIR}/menu"
@@ -76,28 +99,33 @@ install_core_files() {
   download_file "${BASE_URL}/Modulos/attscript" "${BIN_DIR}/attscript"
 
   chmod 755 "${BIN_DIR}/menu" "${BIN_DIR}/verifatt" "${BIN_DIR}/attscript"
-}
 
-create_shortcuts() {
   echo "/bin/menu" > /bin/h
   chmod 755 /bin/h
 }
 
 configure_firewall() {
   if command -v ufw >/dev/null 2>&1; then
-    msg "Liberando portas básicas no UFW..."
+    msg "Liberando portas comuns no firewall..."
     ufw allow 22/tcp >/dev/null 2>&1 || true
     ufw allow 80/tcp >/dev/null 2>&1 || true
     ufw allow 443/tcp >/dev/null 2>&1 || true
     ufw allow 8080/tcp >/dev/null 2>&1 || true
+    ufw allow 8799/tcp >/dev/null 2>&1 || true
+    ufw allow 3128/tcp >/dev/null 2>&1 || true
   fi
 }
 
-finish_install() {
-  msg "Instalação base concluída."
+show_summary() {
+  clear
+  echo -e "\033[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+  echo -e "\033[1;37m         SSHPLUS AutomBot ARM instalado       \033[0m"
+  echo -e "\033[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+  echo -e "\033[1;33mComando principal:\033[0m menu"
+  echo -e "\033[1;33mAtalho:\033[0m h"
+  echo -e "\033[1;33mLog de instalação:\033[0m ${LOG_FILE}"
+  echo -e "\033[1;33mVersão local:\033[0m $(head -n 1 "${VERSION_FILE}" 2>/dev/null || echo 'indefinida')"
   echo
-  echo "Comando principal: menu"
-  echo "Log de instalação: $LOG_FILE"
 }
 
 main() {
@@ -105,11 +133,11 @@ main() {
   require_root
   detect_arch
   prepare_dirs
-  check_dependencies
-  install_core_files
-  create_shortcuts
+  install_packages
+  prepare_base_files
+  install_remote_files
   configure_firewall
-  finish_install
+  show_summary
 }
 
 main "$@"
