@@ -1,0 +1,267 @@
+#!/bin/bash
+
+SQUID_CONF="/etc/squid/squid.conf"
+SQUID_BACKUP="/etc/squid/squid.conf.bak"
+META_FILE="/etc/sshplus-sockshttp-meta.conf"
+DEFAULT_PORT="3128"
+
+verde(){ echo -e "\033[1;32m$1\033[0m"; }
+amarelo(){ echo -e "\033[1;33m$1\033[0m"; }
+vermelho(){ echo -e "\033[1;31m$1\033[0m"; }
+azul(){ echo -e "\033[1;34m$1\033[0m"; }
+
+pause() {
+  echo
+  read -p "Enter para voltar..." _
+}
+
+require_root() {
+  if [[ "$(id -u)" != "0" ]]; then
+    vermelho "Execute como root."
+    exit 1
+  fi
+}
+
+log_action() {
+  if [[ -x /bin/loggerapi ]]; then
+    /bin/loggerapi "$1" "$2" >/dev/null 2>&1 || true
+  fi
+}
+
+install_packages() {
+  apt update -y
+  apt install -y squid curl iptables ufw
+}
+
+backup_config() {
+  if [[ -f "$SQUID_CONF" && ! -f "$SQUID_BACKUP" ]]; then
+    cp "$SQUID_CONF" "$SQUID_BACKUP"
+  fi
+}
+
+open_firewall_port() {
+  local port="$1"
+
+  iptables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || \
+    iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
+
+  if command -v ufw >/dev/null 2>&1; then
+    ufw allow "${port}/tcp" >/dev/null 2>&1 || true
+    ufw reload >/dev/null 2>&1 || true
+  fi
+}
+
+remove_firewall_port() {
+  local port="$1"
+
+  while iptables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; do
+    iptables -D INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || break
+  done
+
+  if command -v ufw >/dev/null 2>&1; then
+    ufw delete allow "${port}/tcp" >/dev/null 2>&1 || true
+    ufw reload >/dev/null 2>&1 || true
+  fi
+}
+
+write_meta() {
+  local port="$1"
+  local domain="$2"
+
+  cat > "$META_FILE" <<EOF
+PORT=${port}
+DOMAIN=${domain}
+EOF
+}
+
+write_squid_config() {
+  local port="$1"
+
+  cat > "$SQUID_CONF" <<EOF
+http_port ${port}
+
+acl all src 0.0.0.0/0
+http_access allow all
+
+via off
+forwarded_for delete
+request_header_access Allow allow all
+request_header_access Authorization allow all
+request_header_access WWW-Authenticate allow all
+request_header_access Proxy-Authorization allow all
+request_header_access Proxy-Authenticate allow all
+request_header_access Cache-Control allow all
+request_header_access Content-Encoding allow all
+request_header_access Content-Length allow all
+request_header_access Content-Type allow all
+request_header_access Date allow all
+request_header_access Expires allow all
+request_header_access Host allow all
+request_header_access If-Modified-Since allow all
+request_header_access Last-Modified allow all
+request_header_access Location allow all
+request_header_access Pragma allow all
+request_header_access Accept allow all
+request_header_access Accept-Charset allow all
+request_header_access Accept-Encoding allow all
+request_header_access Accept-Language allow all
+request_header_access Content-Language allow all
+request_header_access Mime-Version allow all
+request_header_access Retry-After allow all
+request_header_access Title allow all
+request_header_access Connection allow all
+request_header_access Proxy-Connection allow all
+request_header_access User-Agent allow all
+request_header_access Cookie allow all
+request_header_access All deny all
+
+cache deny all
+access_log none
+cache_store_log none
+cache_log /dev/null
+pid_filename /var/run/squid.pid
+visible_hostname sshplus-autombot
+EOF
+}
+
+test_squid_config() {
+  squid -k parse
+}
+
+start_squid() {
+  systemctl enable squid >/dev/null 2>&1 || true
+  systemctl restart squid
+}
+
+show_listen_port() {
+  local port="$1"
+  ss -lntp | grep ":${port}" || true
+}
+
+install_sockshttp() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      INSTALAR SOCKSHTTP / SQUID"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  read -p "Domínio/IP para referência [vpn.autombot.com.br]: " domain
+  domain="${domain:-vpn.autombot.com.br}"
+
+  read -p "Porta do HTTP Proxy [${DEFAULT_PORT}]: " proxy_port
+  proxy_port="${proxy_port:-$DEFAULT_PORT}"
+
+  [[ ! "$proxy_port" =~ ^[0-9]+$ ]] && vermelho "Porta inválida." && pause && return
+
+  install_packages
+  backup_config
+  write_meta "$proxy_port" "$domain"
+  write_squid_config "$proxy_port"
+
+  if ! test_squid_config; then
+    vermelho "Erro na configuração do Squid."
+    pause
+    return
+  fi
+
+  open_firewall_port "$proxy_port"
+
+  if ! start_squid; then
+    vermelho "Falha ao iniciar o Squid."
+    systemctl status squid -l --no-pager || true
+    pause
+    return
+  fi
+
+  log_action "SOCKSHTTP_INSTALL" "port=${proxy_port} domain=${domain}"
+
+  echo
+  verde "SOCKSHTTP configurado com sucesso."
+  echo
+  echo "Host/IP   : ${domain}"
+  echo "Porta     : ${proxy_port}"
+  echo "Tipo      : HTTP Proxy"
+  echo
+  echo "Teste local sugerido:"
+  echo "curl -x http://${domain}:${proxy_port} http://ifconfig.me"
+  echo
+  echo "Porta em escuta:"
+  show_listen_port "$proxy_port"
+  pause
+}
+
+status_sockshttp() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "        STATUS SOCKSHTTP / SQUID"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  [[ -f "$META_FILE" ]] && echo "Metadados:" && cat "$META_FILE" && echo
+  [[ -f "$SQUID_CONF" ]] && echo "Configuração:" && cat "$SQUID_CONF" && echo
+
+  systemctl status squid -l --no-pager || true
+  echo
+  echo "Portas em uso:"
+  ss -lntp | grep -E ':3128|:8080|:443|:22 ' || true
+  echo
+  pause
+}
+
+restart_sockshttp() {
+  systemctl restart squid || {
+    vermelho "Falha ao reiniciar o Squid."
+    systemctl status squid -l --no-pager || true
+    pause
+    return
+  }
+
+  log_action "SOCKSHTTP_RESTART" "squid reiniciado"
+
+  echo
+  verde "Squid reiniciado."
+  pause
+}
+
+remove_sockshttp() {
+  read -p "Confirma remover configuração do SOCKSHTTP? [s/N]: " confirm
+  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+
+  local port
+  port="$(awk -F= '/^PORT=/{print $2}' "$META_FILE" 2>/dev/null)"
+  [[ -z "$port" ]] && port="$DEFAULT_PORT"
+
+  systemctl stop squid >/dev/null 2>&1 || true
+  remove_firewall_port "$port"
+
+  if [[ -f "$SQUID_BACKUP" ]]; then
+    cp "$SQUID_BACKUP" "$SQUID_CONF"
+  else
+    rm -f "$SQUID_CONF"
+  fi
+
+  rm -f "$META_FILE"
+
+  log_action "SOCKSHTTP_REMOVE" "configuracao removida"
+
+  echo
+  verde "Configuração removida."
+  pause
+}
+
+require_root
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      GERENCIAR SOCKSHTTP / SQUID"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Instalar / Reconfigurar"
+  echo " [2] Ver status"
+  echo " [3] Reiniciar"
+  echo " [4] Remover configuração"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1
