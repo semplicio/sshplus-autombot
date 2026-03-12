@@ -87,6 +87,7 @@ prepare_base_files() {
   [[ -f "${ETC_DIR}/Exp" ]] || echo "0" > "${ETC_DIR}/Exp"
 
   mkdir -p /root/sshplus-backup
+  mkdir -p /root/sshplus-export
 
   if [[ ! -f "$HOME/usuarios.db" ]]; then
     awk -F: '$3 >= 1000 { print $1 " 1" }' /etc/passwd | grep -v '^nobody' > "$HOME/usuarios.db" || true
