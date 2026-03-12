@@ -100,6 +100,8 @@ show_options() {
   echo " [39] Exportar payload para arquivo"
   echo " [40] Perfis comerciais de payload"
   echo " [41] Exportar perfil comercial"
+  echo " [42] Instalar TLS automático"
+  echo " [43] Renovar certificados TLS"
   echo " [0] Sair"
   echo
 }
@@ -204,6 +206,8 @@ validate_modules() {
     payloadexportfile
     payloadprofiles
     payloadprofileexport
+    installtls
+    tlsrenew
   )
 
   for mod in "${mods[@]}"; do
@@ -267,6 +271,8 @@ main_menu() {
       39) clear; run_module payloadexportfile ;;
       40) clear; run_module payloadprofiles ;;
       41) clear; run_module payloadprofileexport ;;
+      42) clear; run_module installtls ;;
+      43) clear; run_module tlsrenew ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
