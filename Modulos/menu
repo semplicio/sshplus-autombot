@@ -83,6 +83,8 @@ show_options() {
   echo " [22] Instalar Nginx + TLS + WS"
   echo " [23] Instalar Xray gRPC"
   echo " [24] Camuflagem e página fake"
+  echo " [25] Painel de conexões"
+  echo " [26] Reiniciar serviços de conexão"
   echo " [0] Sair"
   echo
 }
@@ -170,6 +172,8 @@ validate_modules() {
     installnginxws
     installxraygrpc
     installcamuflagem
+    painelconexoes
+    reiniciarservicos
   )
 
   for mod in "${mods[@]}"; do
@@ -216,6 +220,8 @@ main_menu() {
       22) clear; run_module installnginxws ;;
       23) clear; run_module installxraygrpc ;;
       24) clear; run_module installcamuflagem ;;
+      25) clear; run_module painelconexoes ;;
+      26) clear; run_module reiniciarservicos ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
