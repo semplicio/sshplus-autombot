@@ -94,24 +94,18 @@ install_remote_files() {
   msg "Baixando arquivos do repositório..."
 
   download_file "${BASE_URL}/Install/versao" "${INSTALL_DIR}/versao"
-  download_file "${BASE_URL}/Modulos/menu" "${BIN_DIR}/menu"
-  download_file "${BASE_URL}/Modulos/verifatt" "${BIN_DIR}/verifatt"
-  download_file "${BASE_URL}/Modulos/attscript" "${BIN_DIR}/attscript"
-  download_file "${BASE_URL}/Modulos/criarusuario" "${BIN_DIR}/criarusuario"
-  download_file "${BASE_URL}/Modulos/alterarsenha" "${BIN_DIR}/alterarsenha"
-  download_file "${BASE_URL}/Modulos/alterarlimite" "${BIN_DIR}/alterarlimite"
-  download_file "${BASE_URL}/Modulos/remover" "${BIN_DIR}/remover"
-  download_file "${BASE_URL}/Modulos/sshmonitor" "${BIN_DIR}/sshmonitor"
 
-  chmod 755 \
-    "${BIN_DIR}/menu" \
-    "${BIN_DIR}/verifatt" \
-    "${BIN_DIR}/attscript" \
-    "${BIN_DIR}/criarusuario" \
-    "${BIN_DIR}/alterarsenha" \
-    "${BIN_DIR}/alterarlimite" \
-    "${BIN_DIR}/remover" \
-    "${BIN_DIR}/sshmonitor"
+  local modules_list="${TMP_DIR}/modules_arm.lst"
+  download_file "${BASE_URL}/Install/modules_arm.lst" "$modules_list"
+
+  while IFS= read -r module; do
+    [[ -z "$module" ]] && continue
+    [[ "$module" =~ ^# ]] && continue
+
+    msg "Instalando módulo: $module"
+    download_file "${BASE_URL}/Modulos/${module}" "${BIN_DIR}/${module}"
+    chmod 755 "${BIN_DIR}/${module}"
+  done < "$modules_list"
 
   echo "/bin/menu" > /bin/h
   chmod 755 /bin/h
