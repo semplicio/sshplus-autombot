@@ -1,0 +1,39 @@
+#!/bin/bash
+
+NGINX_META="/etc/sshplus-nginx-meta.conf"
+
+get_domain() {
+  if [[ -f "$NGINX_META" ]]; then
+    grep '^DOMAIN=' "$NGINX_META" | cut -d= -f2
+  fi
+}
+
+DOMAIN="$(get_domain)"
+
+if [[ -z "$DOMAIN" ]]; then
+  echo "Domínio não configurado."
+  read -p "Enter para voltar..."
+  exit 1
+fi
+
+echo "Instalando Certbot..."
+apt update -y
+apt install certbot python3-certbot-nginx -y
+
+echo "Gerando certificado para $DOMAIN"
+
+certbot --nginx \
+-d "$DOMAIN" \
+--non-interactive \
+--agree-tos \
+-m admin@$DOMAIN \
+--redirect
+
+if [[ $? -eq 0 ]]; then
+  echo "TLS configurado com sucesso."
+  systemctl reload nginx
+else
+  echo "Falha ao gerar TLS."
+fi
+
+read -p "Enter para voltar..."
