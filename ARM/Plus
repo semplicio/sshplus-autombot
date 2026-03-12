@@ -50,7 +50,6 @@ detect_arch() {
 
 prepare_dirs() {
   mkdir -p "$INSTALL_DIR" "$ETC_DIR" "$TMP_DIR"
-  mkdir -p /root/sshplus-backup
   touch "$LOG_FILE"
   touch /var/log/sshplus.log
 }
@@ -86,6 +85,8 @@ prepare_base_files() {
   [[ -f /etc/IP ]] || curl -4 -fsSL ifconfig.me >/etc/IP 2>/dev/null || echo "0.0.0.0" >/etc/IP
   [[ -f /etc/autostart ]] || touch /etc/autostart
   [[ -f "${ETC_DIR}/Exp" ]] || echo "0" > "${ETC_DIR}/Exp"
+
+  mkdir -p /root/sshplus-backup
 
   if [[ ! -f "$HOME/usuarios.db" ]]; then
     awk -F: '$3 >= 1000 { print $1 " 1" }' /etc/passwd | grep -v '^nobody' > "$HOME/usuarios.db" || true
