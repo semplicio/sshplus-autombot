@@ -1,0 +1,36 @@
+#!/bin/bash
+
+LIMIT_DIR="/etc/SSHPlus/limites"
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "                         USUÁRIOS SSH"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+printf "%-20s %-15s %-10s %-12s\n" "USUARIO" "EXPIRACAO" "LIMITE" "STATUS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+while IFS=: read -r user _ uid _ _ _ _; do
+  [[ "$uid" -lt 1000 ]] && continue
+  [[ "$user" == "nobody" ]] && continue
+
+  exp="$(chage -l "$user" 2>/dev/null | awk -F': ' '/Account expires/ {print $2}')"
+  [[ -z "$exp" ]] && exp="desconhecido"
+
+  limit="--"
+  [[ -f "${LIMIT_DIR}/${user}" ]] && limit="$(cat "${LIMIT_DIR}/${user}" 2>/dev/null)"
+
+  status="ATIVO"
+  if [[ "$exp" != "never" && "$exp" != "jamais" && "$exp" != "Nunca" && "$exp" != "never " ]]; then
+    exp_epoch="$(date -d "$exp" +%s 2>/dev/null || echo 0)"
+    now_epoch="$(date +%s)"
+    if [[ "$exp_epoch" -gt 0 && "$exp_epoch" -lt "$now_epoch" ]]; then
+      status="EXPIRADO"
+    fi
+  fi
+
+  printf "%-20s %-15s %-10s %-12s\n" "$user" "$exp" "$limit" "$status"
+done < /etc/passwd
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+read -p "Enter para voltar..."
