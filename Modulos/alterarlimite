@@ -16,6 +16,8 @@ read -p "Novo limite de conexões: " limit
 
 echo "$limit" > "${LIMIT_DIR}/${username}"
 
+/bin/loggerapi "USER_LIMIT" "usuario=${username} limite=${limit}"
+
 echo
 echo "Limite atualizado com sucesso."
 echo "Usuário: $username"
