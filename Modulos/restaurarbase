@@ -1,0 +1,74 @@
+#!/bin/bash
+
+LIMIT_DIR="/etc/SSHPlus/limites"
+TMP_DIR="/tmp/sshplus-restore"
+
+mkdir -p "$LIMIT_DIR"
+rm -rf "$TMP_DIR"
+mkdir -p "$TMP_DIR"
+
+echo "Informe o caminho completo do backup .tar.gz"
+read -p "Arquivo: " BACKUP_FILE
+
+[[ -z "$BACKUP_FILE" ]] && echo "Arquivo inválido." && exit 1
+[[ ! -f "$BACKUP_FILE" ]] && echo "Arquivo não encontrado." && exit 1
+
+tar -xzf "$BACKUP_FILE" -C "$TMP_DIR" || {
+  echo "Falha ao extrair backup."
+  exit 1
+}
+
+[[ -f "${TMP_DIR}/passwd.txt" ]] || { echo "passwd.txt ausente."; exit 1; }
+[[ -f "${TMP_DIR}/shadow.txt" ]] || { echo "shadow.txt ausente."; exit 1; }
+[[ -f "${TMP_DIR}/metadata.txt" ]] || { echo "metadata.txt ausente."; exit 1; }
+
+while IFS=: read -r user passwd uid gid gecos home shell; do
+  [[ -z "$user" ]] && continue
+
+  if ! id "$user" >/dev/null 2>&1; then
+    useradd -M -s /bin/false "$user" >/dev/null 2>&1 || true
+  fi
+
+done < "${TMP_DIR}/passwd.txt"
+
+while IFS= read -r line; do
+  user="$(echo "$line" | cut -d: -f1)"
+  [[ -z "$user" ]] && continue
+
+  current_shadow="$(grep "^${user}:" /etc/shadow 2>/dev/null)"
+  if [[ -n "$current_shadow" ]]; then
+    esc_user="$(printf '%s\n' "$user" | sed 's/[]\/$*.^[]/\\&/g')"
+    sed -i "s|^${esc_user}:.*|${line}|" /etc/shadow
+  else
+    echo "$line" >> /etc/shadow
+  fi
+done < "${TMP_DIR}/shadow.txt"
+
+while IFS='|' read -r user exp; do
+  [[ -z "$user" ]] && continue
+  [[ -z "$exp" ]] && continue
+
+  case "$exp" in
+    never|jamais|Nunca)
+      chage -E -1 "$user" >/dev/null 2>&1 || true
+      ;;
+    *)
+      exp_fmt="$(date -d "$exp" +%Y-%m-%d 2>/dev/null || true)"
+      [[ -n "$exp_fmt" ]] && chage -E "$exp_fmt" "$user" >/dev/null 2>&1 || true
+      ;;
+  esac
+done < "${TMP_DIR}/metadata.txt"
+
+for f in "${TMP_DIR}"/limites-*; do
+  [[ -f "$f" ]] || continue
+  username="$(basename "$f" | sed 's/^limites-//')"
+  cp "$f" "${LIMIT_DIR}/${username}"
+done
+
+/bin/loggerapi "BACKUP_RESTORE" "arquivo=${BACKUP_FILE}"
+
+echo
+echo "Restauração concluída."
+echo
+rm -rf "$TMP_DIR"
+read -p "Enter para voltar..."
