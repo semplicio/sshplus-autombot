@@ -13,9 +13,11 @@ read_meta() {
 DOMAIN="$(read_meta DOMAIN)"
 XRAY_WS_PATH="$(read_meta XRAY_WS_PATH)"
 XRAY_GRPC_SERVICE="$(read_meta XRAY_GRPC_SERVICE)"
+XRAY_GRPC_PATH="$(read_meta XRAY_GRPC_PATH)"
 
 [[ -z "$XRAY_WS_PATH" ]] && XRAY_WS_PATH="/vmess"
 [[ -z "$XRAY_GRPC_SERVICE" ]] && XRAY_GRPC_SERVICE="grpc"
+[[ -z "$XRAY_GRPC_PATH" ]] && XRAY_GRPC_PATH="/${XRAY_GRPC_SERVICE}/Tun"
 
 select_target() {
   clear
@@ -65,7 +67,7 @@ generate_config() {
 
   [[ -z "$DOMAIN" ]] && echo "Domínio inválido." && read -p "Enter para voltar..." && exit 1
 
-  export TARGET_CONF TARGET_LABEL CLIENT_EMAIL DOMAIN XRAY_WS_PATH XRAY_GRPC_SERVICE
+  export TARGET_CONF TARGET_LABEL CLIENT_EMAIL DOMAIN XRAY_WS_PATH XRAY_GRPC_SERVICE XRAY_GRPC_PATH
 
   python3 <<'PY'
 import json
@@ -80,6 +82,7 @@ client_email = os.environ["CLIENT_EMAIL"]
 domain = os.environ["DOMAIN"]
 ws_path = os.environ["XRAY_WS_PATH"]
 grpc_service = os.environ["XRAY_GRPC_SERVICE"]
+grpc_path = os.environ["XRAY_GRPC_PATH"]
 
 data = json.loads(conf.read_text())
 
@@ -89,7 +92,6 @@ if "inbounds" not in data or not data["inbounds"]:
 
 inb = data["inbounds"][0]
 proto = inb.get("protocol", "")
-port = inb.get("port", 443)
 clients = inb.get("settings", {}).get("clients", [])
 
 client = None
@@ -157,11 +159,8 @@ if target == "XRAY_WS":
 
 elif target == "XRAY_GRPC":
     if proto != "vless":
-        print(f"ERRO: gRPC atual não está em VLESS: {proto}")
-        sys.exit(5)
-
-    # Conforme docs do Xray, com reverse proxy o caminho normal esperado é /{serviceName}/Tun
-    grpc_path = f"/{grpc_service}/Tun"
+      print(f"ERRO: gRPC atual não está em VLESS: {proto}")
+      sys.exit(5)
 
     link = (
         f"vless://{uuid}@{domain}:443"
