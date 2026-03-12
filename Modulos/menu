@@ -27,11 +27,22 @@ get_total_users() {
 }
 
 get_expired_users() {
-  local total=0
-  if [[ -d "$LIMIT_DIR" ]]; then
-    total=$(find "$LIMIT_DIR" -type f 2>/dev/null | wc -l)
-  fi
-  echo "$total"
+  local count=0
+  while IFS=: read -r user _ uid _ _ _ _; do
+    [[ "$uid" -lt 1000 ]] && continue
+    [[ "$user" == "nobody" ]] && continue
+
+    exp="$(chage -l "$user" 2>/dev/null | awk -F': ' '/Account expires/ {print $2}')"
+    if [[ -n "$exp" && "$exp" != "never" && "$exp" != "jamais" && "$exp" != "Nunca" ]]; then
+      exp_epoch="$(date -d "$exp" +%s 2>/dev/null || echo 0)"
+      now_epoch="$(date +%s)"
+      if [[ "$exp_epoch" -gt 0 && "$exp_epoch" -lt "$now_epoch" ]]; then
+        count=$((count + 1))
+      fi
+    fi
+  done < /etc/passwd
+
+  echo "$count"
 }
 
 show_header() {
