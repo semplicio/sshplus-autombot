@@ -27,3 +27,6 @@ installxraygrpc
 installcamuflagem
 painelconexoes
 reiniciarservicos
+xrayaddcliente
+xraylistarclientes
+xrayremovercliente
