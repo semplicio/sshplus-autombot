@@ -1,0 +1,104 @@
+#!/bin/bash
+
+XRAY_WS_CONF="/usr/local/etc/xray/config.json"
+XRAY_GRPC_CONF="/usr/local/etc/xray/grpc-config.json"
+
+select_config() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "        REMOVER CLIENTE XRAY"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Xray WS"
+  echo " [2] Xray gRPC"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " cfgop
+
+  case "$cfgop" in
+    1)
+      TARGET_CONF="$XRAY_WS_CONF"
+      TARGET_SERVICE="xray"
+      TARGET_LABEL="XRAY_WS"
+      ;;
+    2)
+      TARGET_CONF="$XRAY_GRPC_CONF"
+      TARGET_SERVICE="xray-grpc"
+      TARGET_LABEL="XRAY_GRPC"
+      ;;
+    0)
+      exit 0
+      ;;
+    *)
+      echo "Opção inválida."
+      sleep 1
+      select_config
+      ;;
+  esac
+}
+
+remove_client() {
+  [[ -f "$TARGET_CONF" ]] || {
+    echo "Arquivo de configuração não encontrado: $TARGET_CONF"
+    echo
+    read -p "Enter para voltar..."
+    exit 1
+  }
+
+  read -p "Email do cliente para remover: " client_email
+  [[ -z "$client_email" ]] && echo "Email inválido." && read -p "Enter para voltar..." && exit 1
+
+  python3 - "$TARGET_CONF" "$client_email" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+conf = Path(sys.argv[1])
+email = sys.argv[2]
+
+data = json.loads(conf.read_text())
+
+if "inbounds" not in data or not data["inbounds"]:
+    print("ERRO: inbounds não encontrados")
+    sys.exit(1)
+
+inb = data["inbounds"][0]
+settings = inb.setdefault("settings", {})
+clients = settings.setdefault("clients", [])
+
+before = len(clients)
+clients = [c for c in clients if c.get("email") != email]
+after = len(clients)
+
+if before == after:
+    print("ERRO: cliente não encontrado")
+    sys.exit(2)
+
+settings["clients"] = clients
+conf.write_text(json.dumps(data, indent=2))
+print("OK")
+PY
+
+  rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo
+    echo "Falha ao remover cliente."
+    echo
+    read -p "Enter para voltar..."
+    exit 1
+  fi
+
+  systemctl restart "$TARGET_SERVICE" >/dev/null 2>&1 || true
+  /bin/loggerapi "XRAY_CLIENT_REMOVE" "target=${TARGET_LABEL} email=${client_email}"
+
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Cliente removido com sucesso"
+  echo "Destino : ${TARGET_LABEL}"
+  echo "Email   : ${client_email}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  read -p "Enter para voltar..."
+}
+
+select_config
+remove_client
