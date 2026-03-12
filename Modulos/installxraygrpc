@@ -4,11 +4,12 @@ XRAY_DIR="/usr/local/xray"
 CONFIG_DIR="/usr/local/etc/xray"
 CONFIG_FILE="${CONFIG_DIR}/grpc-config.json"
 SERVICE_FILE="/etc/systemd/system/xray-grpc.service"
+META_FILE="/etc/sshplus-xray-grpc-meta.conf"
 
 install_xray_grpc() {
   clear
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "       INSTALAÇÃO XRAY VLESS gRPC"
+  echo "     INSTALAÇÃO XRAY VLESS gRPC"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
 
@@ -19,10 +20,7 @@ install_xray_grpc() {
   grpc_service="${grpc_service:-grpc}"
 
   read -p "UUID (deixe vazio para gerar): " grpc_uuid
-
-  if [[ -z "$grpc_uuid" ]]; then
-    grpc_uuid="$(uuidgen)"
-  fi
+  [[ -z "$grpc_uuid" ]] && grpc_uuid="$(uuidgen)"
 
   if [[ ! "$grpc_port" =~ ^[0-9]+$ ]]; then
     echo "Porta inválida."
@@ -52,7 +50,8 @@ install_xray_grpc() {
       "settings": {
         "clients": [
           {
-            "id": "${grpc_uuid}"
+            "id": "${grpc_uuid}",
+            "email": "default-grpc-client"
           }
         ],
         "decryption": "none"
@@ -60,7 +59,8 @@ install_xray_grpc() {
       "streamSettings": {
         "network": "grpc",
         "grpcSettings": {
-          "serviceName": "${grpc_service}"
+          "serviceName": "${grpc_service}",
+          "multiMode": false
         }
       }
     }
@@ -72,6 +72,13 @@ install_xray_grpc() {
     }
   ]
 }
+EOF
+
+  cat > "$META_FILE" <<EOF
+GRPC_PORT=${grpc_port}
+GRPC_SERVICE=${grpc_service}
+GRPC_UUID=${grpc_uuid}
+GRPC_PATH=/${grpc_service}/Tun
 EOF
 
   cat > "$SERVICE_FILE" <<EOF
@@ -99,6 +106,7 @@ EOF
   echo "Xray gRPC configurado com sucesso"
   echo "Porta       : ${grpc_port}"
   echo "ServiceName : ${grpc_service}"
+  echo "Path Proxy  : /${grpc_service}/Tun"
   echo "UUID        : ${grpc_uuid}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
@@ -112,13 +120,8 @@ status_xray_grpc() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
 
-  if [[ -f "$CONFIG_FILE" ]]; then
-    cat "$CONFIG_FILE"
-    echo
-  else
-    echo "Configuração não encontrada."
-    echo
-  fi
+  [[ -f "$META_FILE" ]] && cat "$META_FILE" && echo
+  [[ -f "$CONFIG_FILE" ]] && cat "$CONFIG_FILE" && echo
 
   systemctl status xray-grpc --no-pager
   echo
@@ -151,6 +154,7 @@ remove_xray_grpc() {
   systemctl disable xray-grpc >/dev/null 2>&1 || true
   rm -f "$SERVICE_FILE"
   rm -f "$CONFIG_FILE"
+  rm -f "$META_FILE"
   systemctl daemon-reload
 
   /bin/loggerapi "XRAY_GRPC_REMOVE" "servico removido"
