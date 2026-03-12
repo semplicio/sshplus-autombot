@@ -1,0 +1,71 @@
+#!/bin/bash
+
+LOG_FILE="/var/log/sshplus.log"
+BACKUP_DIR="/root/sshplus-backup"
+LIMIT_DIR="/etc/SSHPlus/limites"
+
+get_total_users() {
+  awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | wc -l
+}
+
+get_online_users() {
+  who 2>/dev/null | awk '{print $1}' | sort | uniq | wc -l
+}
+
+get_total_sessions() {
+  ps -eo user=,cmd= | awk '$1!="root" && $0 ~ /sshd:/ {c++} END {print c+0}'
+}
+
+get_expired_users() {
+  local count=0
+  while IFS=: read -r user _ uid _ _ _ _; do
+    [[ "$uid" -lt 1000 ]] && continue
+    [[ "$user" == "nobody" ]] && continue
+
+    exp="$(chage -l "$user" 2>/dev/null | awk -F': ' '/Account expires/ {print $2}')"
+    case "$exp" in
+      ""|never|jamais|Nunca) continue ;;
+    esac
+
+    exp_epoch="$(date -d "$exp" +%s 2>/dev/null || echo 0)"
+    now_epoch="$(date +%s)"
+    [[ "$exp_epoch" -gt 0 && "$exp_epoch" -lt "$now_epoch" ]] && count=$((count + 1))
+  done < /etc/passwd
+  echo "$count"
+}
+
+get_blocked_users() {
+  passwd -S 2>/dev/null | awk '$2=="L" {c++} END {print c+0}'
+}
+
+get_latest_backup() {
+  ls -1t "${BACKUP_DIR}"/sshplus-backup-*.tar.gz 2>/dev/null | head -n 1
+}
+
+get_recent_logs() {
+  [[ -f "$LOG_FILE" ]] && tail -n 5 "$LOG_FILE"
+}
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "                    DASHBOARD SSHPLUS AUTOMBOT"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Hostname           : $(hostname 2>/dev/null)"
+echo "IP                 : $(cat /etc/IP 2>/dev/null || echo 'indefinido')"
+echo "Sistema            : $(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')"
+echo "Kernel             : $(uname -r)"
+echo "Arquitetura        : $(uname -m)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Usuários totais    : $(get_total_users)"
+echo "Usuários online    : $(get_online_users)"
+echo "Sessões SSH        : $(get_total_sessions)"
+echo "Usuários expirados : $(get_expired_users)"
+echo "Usuários bloqueados: $(get_blocked_users)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Último backup      : $(get_latest_backup 2>/dev/null || echo 'nenhum')"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Logs recentes:"
+get_recent_logs
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+read -p "Enter para voltar..."
