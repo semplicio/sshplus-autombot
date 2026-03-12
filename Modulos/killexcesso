@@ -1,0 +1,24 @@
+#!/bin/bash
+
+username="$1"
+limit="$2"
+
+[[ -z "$username" || -z "$limit" ]] && exit 1
+[[ ! "$limit" =~ ^[0-9]+$ ]] && exit 1
+
+mapfile -t pids < <(ps -eo user=,pid=,etimes=,cmd= | awk -v u="$username" '$1==u && $0 ~ /sshd:/ {print $2 " " $3}' | sort -k2nr | awk '{print $1}')
+
+total="${#pids[@]}"
+
+[[ "$total" -le "$limit" ]] && exit 0
+
+to_kill=$((total - limit))
+
+count=0
+for pid in "${pids[@]}"; do
+  kill -9 "$pid" >/dev/null 2>&1 || true
+  count=$((count + 1))
+  [[ "$count" -ge "$to_kill" ]] && break
+done
+
+exit 0
