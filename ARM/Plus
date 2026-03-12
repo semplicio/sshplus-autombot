@@ -50,6 +50,7 @@ detect_arch() {
 
 prepare_dirs() {
   mkdir -p "$INSTALL_DIR" "$ETC_DIR" "$TMP_DIR"
+  mkdir -p /root/sshplus-backup
   touch "$LOG_FILE"
   touch /var/log/sshplus.log
 }
