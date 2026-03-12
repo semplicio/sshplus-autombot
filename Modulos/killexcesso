@@ -21,4 +21,6 @@ for pid in "${pids[@]}"; do
   [[ "$count" -ge "$to_kill" ]] && break
 done
 
+/bin/loggerapi "SESSION_LIMIT_KILL" "usuario=${username} limite=${limit} sessoes=${total} encerradas=${to_kill}"
+
 exit 0
