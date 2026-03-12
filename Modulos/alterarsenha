@@ -1,0 +1,19 @@
+#!/bin/bash
+
+read -p "Usuário: " username
+[[ -z "$username" ]] && echo "Usuário inválido." && exit 1
+
+if ! id "$username" >/dev/null 2>&1; then
+  echo "Usuário não existe."
+  exit 1
+fi
+
+read -p "Nova senha: " password
+[[ -z "$password" ]] && echo "Senha inválida." && exit 1
+
+echo "${username}:${password}" | chpasswd || exit 1
+
+echo
+echo "Senha alterada com sucesso para: $username"
+echo
+read -p "Enter para voltar..."
