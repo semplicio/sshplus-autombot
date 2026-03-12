@@ -54,6 +54,13 @@ prepare_dirs() {
   touch /var/log/sshplus.log
 }
 
+check_requirements() {
+  if ! command -v curl >/dev/null 2>&1; then
+    err "curl não encontrado. Instale o curl antes de continuar."
+    exit 1
+  fi
+}
+
 download_file() {
   local url="$1"
   local dest="$2"
@@ -107,11 +114,15 @@ install_remote_files() {
     [[ "$module" =~ ^# ]] && continue
 
     msg "Instalando módulo: $module"
-    download_file "${BASE_URL}/Modulos/${module}" "${BIN_DIR}/${module}"
-    chmod 755 "${BIN_DIR}/${module}"
+    download_file "${BASE_URL}/Modulos/${module}" "${TMP_DIR}/${module}"
+    dos2unix "${TMP_DIR}/${module}" >/dev/null 2>&1 || true
+    install -m 755 "${TMP_DIR}/${module}" "${BIN_DIR}/${module}"
   done < "$modules_list"
 
-  echo "/bin/menu" > /bin/h
+  cat > /bin/h <<'EOF'
+#!/bin/bash
+/bin/menu "$@"
+EOF
   chmod 755 /bin/h
 }
 
@@ -141,6 +152,12 @@ EOF
   systemctl restart cron >/dev/null 2>&1 || service cron restart >/dev/null 2>&1 || true
 }
 
+register_install_log() {
+  if [[ -x /bin/loggerapi ]]; then
+    /bin/loggerapi "INSTALL" "Instalacao/atualizacao executada com sucesso" >/dev/null 2>&1 || true
+  fi
+}
+
 show_summary() {
   clear
   echo -e "\033[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
@@ -156,24 +173,13 @@ show_summary() {
 main() {
   clear
   require_root
+  check_requirements
   detect_arch
   prepare_dirs
   install_packages
   prepare_base_files
   install_remote_files
-  main() {
-  clear
-  require_root
-  detect_arch
-  prepare_dirs
-  install_packages
-  prepare_base_files
-  install_remote_files
-  /bin/loggerapi "INSTALL" "Instalacao/atualizacao executada com sucesso"
-  configure_firewall
-  configure_cron
-  show_summary
-}
+  register_install_log
   configure_firewall
   configure_cron
   show_summary
