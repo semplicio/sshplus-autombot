@@ -64,9 +64,38 @@ check_domain_points_here() {
   [[ "$public_ip" == "$dns_ip" ]]
 }
 
+detect_blocking_input_reject() {
+  iptables -S INPUT 2>/dev/null | grep -q '^-A INPUT -j REJECT --reject-with icmp-host-prohibited$'
+}
+
+fix_input_reject_rule() {
+  local changed=0
+
+  while iptables -C INPUT -j REJECT --reject-with icmp-host-prohibited 2>/dev/null; do
+    iptables -D INPUT -j REJECT --reject-with icmp-host-prohibited >/dev/null 2>&1 || break
+    changed=1
+  done
+
+  if [[ "$changed" -eq 1 ]]; then
+    amarelo "Regra bloqueadora de INPUT removida do iptables."
+    if command -v ufw >/dev/null 2>&1; then
+      ufw reload >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
+show_input_chain() {
+  iptables -L INPUT --line-numbers -n 2>/dev/null || true
+}
+
+local_http_check() {
+  local domain="$1"
+  curl -s -H "Host: $domain" http://127.0.0.1 >/dev/null 2>&1
+}
+
 install_packages() {
   apt update -y
-  apt install -y nginx certbot python3-certbot-nginx curl
+  apt install -y nginx certbot python3-certbot-nginx curl iptables ufw
 }
 
 write_meta_file() {
@@ -198,9 +227,23 @@ prepare_nginx_site() {
   ln -sf "$NGINX_SITE" "$NGINX_LINK"
 }
 
+prepare_firewall_http_access() {
+  if detect_blocking_input_reject; then
+    amarelo "Regra de bloqueio prematura encontrada na chain INPUT."
+    fix_input_reject_rule
+  fi
+
+  if command -v ufw >/dev/null 2>&1; then
+    ufw allow 80/tcp >/dev/null 2>&1 || true
+    ufw allow 443/tcp >/dev/null 2>&1 || true
+    ufw reload >/dev/null 2>&1 || true
+  fi
+}
+
 start_nginx_safely() {
   cleanup_old_nginx
   stop_apache_if_exists
+  prepare_firewall_http_access
 
   if ! check_port_80_free; then
     vermelho "A porta 80 está em uso antes de iniciar o Nginx."
@@ -267,9 +310,21 @@ install_nginx_ws() {
   if ! start_nginx_safely; then
     echo
     vermelho "Falha ao iniciar o Nginx com segurança."
-    vermelho "Verifique a porta 80 e os logs do serviço."
+    vermelho "Verifique a porta 80, iptables e os logs do serviço."
     echo
     show_port_80_usage
+    echo
+    show_input_chain
+    pause
+    return
+  fi
+
+  if ! local_http_check "$domain"; then
+    echo
+    vermelho "O Nginx não respondeu localmente para o domínio informado."
+    vermelho "Verifique a configuração HTTP antes de solicitar o SSL."
+    echo
+    systemctl status nginx -l --no-pager || true
     pause
     return
   fi
@@ -277,10 +332,15 @@ install_nginx_ws() {
   if ! certbot --nginx -d "$domain" --non-interactive --register-unsafely-without-email --agree-tos --redirect; then
     echo
     vermelho "Falha ao gerar certificado SSL."
-    vermelho "Verifique domínio, DNS e porta 80 liberada."
+    vermelho "Diagnóstico provável:"
+    echo "- DNS do domínio incorreto, inacessível ou ainda propagando"
+    echo "- Porta 80 bloqueada externamente"
+    echo "- Firewall local com regra prematura de REJECT"
     echo
     systemctl status nginx -l --no-pager || true
     show_port_80_usage
+    echo
+    show_input_chain
     pause
     return
   fi
@@ -332,11 +392,16 @@ status_nginx_ws() {
   echo "Portas em uso:"
   ss -lntp | grep -E ':80 |:443 ' || true
   echo
+  echo "Chain INPUT:"
+  show_input_chain
+  echo
   pause
 }
 
 restart_nginx_ws() {
   cleanup_old_nginx
+  prepare_firewall_http_access
+
   systemctl restart nginx || {
     vermelho "Falha ao reiniciar o Nginx."
     systemctl status nginx -l --no-pager || true
@@ -375,6 +440,8 @@ remove_nginx_ws() {
   echo
   pause
 }
+
+require_root
 
 while true; do
   clear
