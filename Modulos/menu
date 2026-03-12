@@ -64,10 +64,12 @@ show_options() {
   echo " [3] Alterar limite"
   echo " [4] Remover usuário"
   echo " [5] Monitor SSH"
-  echo " [6] Verificar atualização"
-  echo " [7] Atualizar script"
-  echo " [8] Status do sistema"
-  echo " [9] Reiniciar serviços"
+  echo " [6] Sessões por usuário"
+  echo " [7] Listar usuários"
+  echo " [8] Verificar atualização"
+  echo " [9] Atualizar script"
+  echo " [10] Status do sistema"
+  echo " [11] Reiniciar serviços"
   echo " [0] Sair"
   echo
 }
