@@ -1,0 +1,23 @@
+#!/bin/bash
+
+REMOTE_VERSION_URL="https://raw.githubusercontent.com/semplicio/sshplus-autombot/main/Install/versao"
+LOCAL_VERSION_FILE="/usr/local/lib/sshplus/versao"
+TMP_VERSION_FILE="/tmp/sshplus_remote_versao"
+
+rm -f "$TMP_VERSION_FILE"
+
+if curl -fsSL "$REMOTE_VERSION_URL" -o "$TMP_VERSION_FILE"; then
+    if [[ -f "$LOCAL_VERSION_FILE" ]]; then
+        local_ver=$(sed -n '1p' "$LOCAL_VERSION_FILE" | sed 's/[^0-9]//g')
+        remote_ver=$(sed -n '1p' "$TMP_VERSION_FILE" | sed 's/[^0-9]//g')
+
+        if [[ -n "$local_ver" && -n "$remote_ver" && "$local_ver" != "$remote_ver" ]]; then
+            cp "$TMP_VERSION_FILE" /tmp/att
+            echo "ATUALIZACAO_DISPONIVEL"
+            exit 0
+        fi
+    fi
+fi
+
+echo "SEM_ATUALIZACAO"
+exit 0
