@@ -1,0 +1,27 @@
+#!/bin/bash
+
+LIMIT_DIR="/etc/SSHPlus/limites"
+
+while IFS=: read -r user _ uid _ _ _ _; do
+  [[ "$uid" -lt 1000 ]] && continue
+  [[ "$user" == "nobody" ]] && continue
+
+  exp="$(chage -l "$user" 2>/dev/null | awk -F': ' '/Account expires/ {print $2}')"
+  [[ -z "$exp" ]] && continue
+
+  case "$exp" in
+    never|jamais|Nunca)
+      continue
+      ;;
+  esac
+
+  exp_epoch="$(date -d "$exp" +%s 2>/dev/null || echo 0)"
+  now_epoch="$(date +%s)"
+
+  if [[ "$exp_epoch" -gt 0 && "$exp_epoch" -lt "$now_epoch" ]]; then
+    passwd -l "$user" >/dev/null 2>&1 || true
+    pkill -u "$user" >/dev/null 2>&1 || true
+  fi
+done
+
+exit 0
