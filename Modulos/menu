@@ -70,6 +70,7 @@ show_options() {
   echo " [9] Atualizar script"
   echo " [10] Status do sistema"
   echo " [11] Reiniciar serviços"
+  echo " [12] Ver logs"
   echo " [0] Sair"
   echo
 }
@@ -143,6 +144,8 @@ validate_modules() {
     verifilimite
     killexcesso
     expcheck
+    loggerapi
+    verlogs
   )
 
   for mod in "${mods[@]}"; do
@@ -176,6 +179,7 @@ main_menu() {
       9) clear; run_update ;;
       10) clear; system_status ;;
       11) clear; restart_services ;;
+      12) clear; run_module verlogs ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
