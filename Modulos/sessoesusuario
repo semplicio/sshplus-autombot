@@ -1,0 +1,40 @@
+#!/bin/bash
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "                    SESSÕES SSH POR USUÁRIO"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+sessions="$(who 2>/dev/null)"
+
+if [[ -z "$sessions" ]]; then
+  echo "Nenhuma sessão identificada via who."
+  echo
+  echo "Processos sshd ativos:"
+  ps -eo user,pid,cmd | grep '[s]shd:' | grep -v root
+  echo
+  read -p "Enter para voltar..."
+  exit 0
+fi
+
+printf "%-20s %-12s %-20s %-20s\n" "USUARIO" "TTY" "DATA/HORA" "ORIGEM"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+echo "$sessions" | while read -r user tty data hora origem resto; do
+  [[ -z "$user" ]] && continue
+  [[ -z "$origem" ]] && origem="-"
+  origem="${origem#\(}"
+  origem="${origem%\)}"
+  printf "%-20s %-12s %-20s %-20s\n" "$user" "$tty" "$data $hora" "$origem"
+done
+
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Resumo por usuário:"
+echo
+
+who 2>/dev/null | awk '{print $1}' | sort | uniq -c | awk '{printf "%-5s %s\n", $1, $2}'
+
+echo
+read -p "Enter para voltar..."
