@@ -161,6 +161,9 @@ validate_modules() {
     exportarinfo
     jsonstatus
     exportarjson
+    installws
+    installxray
+    installopenvpn
   )
 
   for mod in "${mods[@]}"; do
@@ -201,6 +204,9 @@ main_menu() {
       16) clear; run_module exportarinfo ;;
       17) clear; run_module jsonstatus ;;
       18) clear; run_module exportarjson ;;
+      19) clear; run_module installws ;;
+      20) clear; run_module installxray ;;
+      21) clear; run_module installopenvpn ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
