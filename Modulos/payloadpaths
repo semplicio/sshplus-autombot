@@ -1,0 +1,289 @@
+#!/bin/bash
+
+NGINX_SITE="/etc/nginx/sites-available/sshplus"
+PATHS_FILE="/etc/sshplus-payload-paths.conf"
+
+default_paths() {
+  cat <<EOF
+/ws
+/connect
+/proxy
+/app
+/app88
+/tunnel
+/rotate
+EOF
+}
+
+save_paths_file() {
+  local paths="$1"
+  echo "$paths" | sed '/^[[:space:]]*$/d' > "$PATHS_FILE"
+}
+
+inject_paths_into_nginx() {
+  local ws_port="$1"
+
+  python3 - "$NGINX_SITE" "$PATHS_FILE" "$ws_port" <<'PY'
+from pathlib import Path
+import sys
+import re
+
+nginx_file = Path(sys.argv[1])
+paths_file = Path(sys.argv[2])
+ws_port = sys.argv[3]
+
+text = nginx_file.read_text()
+
+start_marker = "    # SSHPLUS_PAYLOAD_PATHS_START"
+end_marker = "    # SSHPLUS_PAYLOAD_PATHS_END"
+
+block = ""
+if paths_file.exists():
+    paths = [p.strip() for p in paths_file.read_text().splitlines() if p.strip()]
+else:
+    paths = []
+
+for p in paths:
+    block += f'''    location {p} {{
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:{ws_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }}
+
+'''
+
+wrapped = start_marker + "\n" + block + "    " + end_marker
+
+pattern = re.compile(re.escape(start_marker) + r'.*?' + re.escape(end_marker), re.S)
+if pattern.search(text):
+    text = pattern.sub(wrapped, text)
+else:
+    matches = list(re.finditer(r'server \{', text))
+    if not matches:
+        print("ERRO: bloco server não encontrado")
+        sys.exit(1)
+
+    last_start = matches[-1].start()
+    tail = text[last_start:]
+    idx = tail.rfind('}')
+    if idx == -1:
+        print("ERRO: fechamento do server não encontrado")
+        sys.exit(1)
+
+    tail = tail[:idx] + "\n" + wrapped + "\n}" + tail[idx+1:]
+    text = text[:last_start] + tail
+
+nginx_file.write_text(text)
+print("OK")
+PY
+}
+
+get_ws_port() {
+  if [[ -f /etc/sshplus-nginx-meta.conf ]]; then
+    grep '^WS_PORT=' /etc/sshplus-nginx-meta.conf | cut -d= -f2-
+  fi
+}
+
+add_default_paths() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      APLICAR PATHS PADRÃO"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  [[ -f "$NGINX_SITE" ]] || {
+    echo "Configuração do Nginx não encontrada."
+    echo "Instale primeiro Nginx + TLS + WS."
+    echo
+    read -p "Enter para voltar..."
+    return
+  }
+
+  ws_port="$(get_ws_port)"
+  ws_port="${ws_port:-8080}"
+
+  default_paths | save_paths_file "$(default_paths)"
+  inject_paths_into_nginx "$ws_port" || {
+    echo "Falha ao ajustar Nginx."
+    read -p "Enter para voltar..."
+    return
+  }
+
+  nginx -t || {
+    echo "Configuração inválida no Nginx."
+    read -p "Enter para voltar..."
+    return
+  }
+
+  systemctl restart nginx
+  /bin/loggerapi "PAYLOAD_PATHS_DEFAULT" "ws_port=${ws_port}"
+
+  echo
+  echo "Paths padrão aplicados com sucesso."
+  echo
+  cat "$PATHS_FILE"
+  echo
+  read -p "Enter para voltar..."
+}
+
+custom_paths() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      CONFIGURAR PATHS CUSTOM"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  echo "Digite um path por linha."
+  echo "Exemplo:"
+  echo "/ws"
+  echo "/app88"
+  echo "/proxy"
+  echo
+  echo "Finalize com uma linha contendo apenas: FIM"
+  echo
+
+  [[ -f "$NGINX_SITE" ]] || {
+    echo "Configuração do Nginx não encontrada."
+    echo "Instale primeiro Nginx + TLS + WS."
+    echo
+    read -p "Enter para voltar..."
+    return
+  }
+
+  ws_port="$(get_ws_port)"
+  ws_port="${ws_port:-8080}"
+
+  tmp_file="/tmp/sshplus_payload_paths_input.txt"
+  : > "$tmp_file"
+
+  while true; do
+    read -p "Path: " line
+    [[ "$line" == "FIM" ]] && break
+    [[ -z "$line" ]] && continue
+    [[ "$line" != /* ]] && line="/$line"
+    echo "$line" >> "$tmp_file"
+  done
+
+  if [[ ! -s "$tmp_file" ]]; then
+    echo "Nenhum path informado."
+    rm -f "$tmp_file"
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  sort -u "$tmp_file" > "$PATHS_FILE"
+  rm -f "$tmp_file"
+
+  inject_paths_into_nginx "$ws_port" || {
+    echo "Falha ao ajustar Nginx."
+    read -p "Enter para voltar..."
+    return
+  }
+
+  nginx -t || {
+    echo "Configuração inválida no Nginx."
+    read -p "Enter para voltar..."
+    return
+  }
+
+  systemctl restart nginx
+  /bin/loggerapi "PAYLOAD_PATHS_CUSTOM" "ws_port=${ws_port}"
+
+  echo
+  echo "Paths customizados aplicados com sucesso."
+  echo
+  cat "$PATHS_FILE"
+  echo
+  read -p "Enter para voltar..."
+}
+
+show_paths() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "         PATHS DE PAYLOAD"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  if [[ -f "$PATHS_FILE" ]]; then
+    cat "$PATHS_FILE"
+  else
+    echo "Nenhum arquivo de paths encontrado."
+  fi
+
+  echo
+  echo "Trecho atual do Nginx:"
+  echo
+  grep -n "SSHPLUS_PAYLOAD_PATHS" -A 80 "$NGINX_SITE" 2>/dev/null || echo "Bloco não encontrado."
+  echo
+  read -p "Enter para voltar..."
+}
+
+remove_paths() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "        REMOVER PATHS EXTRAS"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  read -p "Confirma remover paths extras? [s/N]: " confirm
+  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+
+  python3 - "$NGINX_SITE" <<'PY'
+from pathlib import Path
+import sys
+import re
+
+nginx_file = Path(sys.argv[1])
+text = nginx_file.read_text()
+
+start_marker = "    # SSHPLUS_PAYLOAD_PATHS_START"
+end_marker = "    # SSHPLUS_PAYLOAD_PATHS_END"
+
+pattern = re.compile(r'\n?' + re.escape(start_marker) + r'.*?' + re.escape(end_marker) + r'\n?', re.S)
+text = pattern.sub('\n', text)
+
+nginx_file.write_text(text)
+print("OK")
+PY
+
+  rm -f "$PATHS_FILE"
+
+  nginx -t || {
+    echo "Configuração inválida após remoção."
+    read -p "Enter para voltar..."
+    return
+  }
+
+  systemctl restart nginx
+  /bin/loggerapi "PAYLOAD_PATHS_REMOVE" "paths extras removidos"
+
+  echo
+  echo "Paths extras removidos."
+  echo
+  read -p "Enter para voltar..."
+}
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      GERENCIAR PATHS DE PAYLOAD"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Aplicar paths padrão"
+  echo " [2] Configurar paths customizados"
+  echo " [3] Ver paths atuais"
+  echo " [4] Remover paths extras"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1) add_default_paths ;;
+    2) custom_paths ;;
+    3) show_paths ;;
+    4) remove_paths ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
