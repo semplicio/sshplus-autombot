@@ -1,0 +1,107 @@
+#!/bin/bash
+
+NGINX_META="/etc/sshplus-nginx-meta.conf"
+CAMO_META="/etc/sshplus-camo-meta.conf"
+WS_CONF="/usr/local/wsproxy/ws.conf"
+XRAY_WS_CONF="/usr/local/etc/xray/config.json"
+XRAY_GRPC_CONF="/usr/local/etc/xray/grpc-config.json"
+
+status_icon() {
+  local svc="$1"
+  if systemctl is-active --quiet "$svc" 2>/dev/null; then
+    echo "ATIVO"
+  else
+    echo "PARADO"
+  fi
+}
+
+read_value() {
+  local file="$1"
+  local key="$2"
+  [[ -f "$file" ]] || return 0
+  grep -E "^${key}=" "$file" 2>/dev/null | tail -n 1 | cut -d= -f2-
+}
+
+get_ws_port() {
+  read_value "$WS_CONF" "WS_PORT"
+}
+
+get_ws_target() {
+  read_value "$WS_CONF" "WS_TARGET"
+}
+
+get_domain() {
+  read_value "$NGINX_META" "DOMAIN"
+}
+
+get_xray_ws_port() {
+  read_value "$NGINX_META" "XRAY_WS_PORT"
+}
+
+get_xray_ws_path() {
+  read_value "$NGINX_META" "XRAY_WS_PATH"
+}
+
+get_xray_grpc_port() {
+  read_value "$NGINX_META" "XRAY_GRPC_PORT"
+}
+
+get_xray_grpc_service() {
+  read_value "$NGINX_META" "XRAY_GRPC_SERVICE"
+}
+
+get_alt_path1() {
+  read_value "$CAMO_META" "ALT_PATH1"
+}
+
+get_alt_path2() {
+  read_value "$CAMO_META" "ALT_PATH2"
+}
+
+get_listening_ports() {
+  ss -tulpn 2>/dev/null | awk 'NR>1 {print $5}' | sed 's/.*://g' | sort -n | uniq | tr '\n' ' '
+}
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "                 PAINEL DE CONEXÕES E SERVIÇOS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+printf "%-20s %-12s\n" "SERVIÇO" "STATUS"
+printf "%-20s %-12s\n" "sshd" "$(status_icon ssh)"
+printf "%-20s %-12s\n" "wsproxy" "$(status_icon wsproxy)"
+printf "%-20s %-12s\n" "xray" "$(status_icon xray)"
+printf "%-20s %-12s\n" "xray-grpc" "$(status_icon xray-grpc)"
+printf "%-20s %-12s\n" "nginx" "$(status_icon nginx)"
+printf "%-20s %-12s\n" "openvpn" "$(status_icon openvpn)"
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Domínio          : $(get_domain)"
+echo "WS Porta         : $(get_ws_port)"
+echo "WS Destino       : $(get_ws_target)"
+echo "Xray WS Porta    : $(get_xray_ws_port)"
+echo "Xray WS Path     : $(get_xray_ws_path)"
+echo "Xray gRPC Porta  : $(get_xray_grpc_port)"
+echo "Xray gRPC Name   : $(get_xray_grpc_service)"
+echo "Alt Path 1       : $(get_alt_path1)"
+echo "Alt Path 2       : $(get_alt_path2)"
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Portas em escuta : $(get_listening_ports)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+echo "Atalhos externos esperados:"
+domain="$(get_domain)"
+xray_ws_path="$(get_xray_ws_path)"
+grpc_name="$(get_xray_grpc_service)"
+alt1="$(get_alt_path1)"
+alt2="$(get_alt_path2)"
+
+[[ -n "$domain" ]] && echo "SSH WS        -> https://${domain}/ws"
+[[ -n "$domain" && -n "$xray_ws_path" ]] && echo "Xray WS       -> https://${domain}${xray_ws_path}"
+[[ -n "$domain" && -n "$grpc_name" ]] && echo "Xray gRPC     -> serviceName ${grpc_name} / domínio ${domain}"
+[[ -n "$domain" && -n "$alt1" ]] && echo "Path altern.1 -> https://${domain}${alt1}"
+[[ -n "$domain" && -n "$alt2" ]] && echo "Path altern.2 -> https://${domain}${alt2}"
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+read -p "Enter para voltar..."
