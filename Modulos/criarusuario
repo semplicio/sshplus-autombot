@@ -26,6 +26,8 @@ useradd -e "$expiry_date" -M -s /bin/false "$username" || exit 1
 echo "${username}:${password}" | chpasswd || exit 1
 echo "$limit" > "${LIMIT_DIR}/${username}"
 
+/bin/loggerapi "USER_CREATE" "usuario=${username} limite=${limit} expira=${expiry_date}"
+
 clear
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Usuário criado com sucesso"
