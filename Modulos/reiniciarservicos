@@ -1,0 +1,74 @@
+#!/bin/bash
+
+restart_service() {
+  local svc="$1"
+  local label="$2"
+
+  if systemctl list-unit-files | grep -q "^${svc}\."; then
+    systemctl restart "$svc" >/dev/null 2>&1 || true
+    /bin/loggerapi "SERVICE_RESTART" "servico=${svc}"
+    echo "${label} reiniciado."
+  else
+    echo "${label} não encontrado."
+  fi
+}
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "       REINICIAR SERVIÇOS"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Reiniciar SSH"
+  echo " [2] Reiniciar WebSocket SSH"
+  echo " [3] Reiniciar Xray WS"
+  echo " [4] Reiniciar Xray gRPC"
+  echo " [5] Reiniciar Nginx"
+  echo " [6] Reiniciar OpenVPN"
+  echo " [7] Reiniciar todos os principais"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1)
+      restart_service ssh "SSH"
+      read -p "Enter para voltar..."
+      ;;
+    2)
+      restart_service wsproxy "WebSocket SSH"
+      read -p "Enter para voltar..."
+      ;;
+    3)
+      restart_service xray "Xray WS"
+      read -p "Enter para voltar..."
+      ;;
+    4)
+      restart_service xray-grpc "Xray gRPC"
+      read -p "Enter para voltar..."
+      ;;
+    5)
+      restart_service nginx "Nginx"
+      read -p "Enter para voltar..."
+      ;;
+    6)
+      restart_service openvpn "OpenVPN"
+      read -p "Enter para voltar..."
+      ;;
+    7)
+      restart_service ssh "SSH"
+      restart_service wsproxy "WebSocket SSH"
+      restart_service xray "Xray WS"
+      restart_service xray-grpc "Xray gRPC"
+      restart_service nginx "Nginx"
+      restart_service openvpn "OpenVPN"
+      echo
+      read -p "Enter para voltar..."
+      ;;
+    0)
+      exit 0
+      ;;
+    *)
+      echo "Opção inválida."
+      sleep 1
+      ;;
+  esac
+done
