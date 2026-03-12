@@ -1,0 +1,48 @@
+#!/bin/bash
+
+BACKUP_DIR="/root/sshplus-backup"
+LIMIT_DIR="/etc/SSHPlus/limites"
+DATE_TAG="$(date +%Y%m%d-%H%M%S)"
+WORK_DIR="${BACKUP_DIR}/backup-${DATE_TAG}"
+
+mkdir -p "$WORK_DIR"
+mkdir -p "$LIMIT_DIR"
+
+PASSWD_OUT="${WORK_DIR}/passwd.txt"
+SHADOW_OUT="${WORK_DIR}/shadow.txt"
+LIMITS_OUT="${WORK_DIR}/limites"
+META_OUT="${WORK_DIR}/metadata.txt"
+ARCHIVE_OUT="${BACKUP_DIR}/sshplus-backup-${DATE_TAG}.tar.gz"
+
+while IFS=: read -r user passwd uid gid gecos home shell; do
+  [[ "$uid" -lt 1000 ]] && continue
+  [[ "$user" == "nobody" ]] && continue
+
+  echo "${user}:${passwd}:${uid}:${gid}:${gecos}:${home}:${shell}" >> "$PASSWD_OUT"
+
+  shadow_line="$(grep "^${user}:" /etc/shadow 2>/dev/null)"
+  [[ -n "$shadow_line" ]] && echo "$shadow_line" >> "$SHADOW_OUT"
+
+  if [[ -f "${LIMIT_DIR}/${user}" ]]; then
+    cp "${LIMIT_DIR}/${user}" "${LIMITS_OUT}-${user}"
+  fi
+
+  exp="$(chage -l "$user" 2>/dev/null | awk -F': ' '/Account expires/ {print $2}')"
+  echo "${user}|${exp}" >> "$META_OUT"
+
+done < /etc/passwd
+
+tar -czf "$ARCHIVE_OUT" -C "$WORK_DIR" . || exit 1
+rm -rf "$WORK_DIR"
+
+/bin/loggerapi "BACKUP_CREATE" "arquivo=${ARCHIVE_OUT}"
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Backup criado com sucesso"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Arquivo: $ARCHIVE_OUT"
+echo
+ls -lh "$ARCHIVE_OUT" 2>/dev/null
+echo
+read -p "Enter para voltar..."
