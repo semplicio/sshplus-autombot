@@ -1,0 +1,128 @@
+#!/bin/bash
+
+XRAY_WS_CONF="/usr/local/etc/xray/config.json"
+XRAY_GRPC_CONF="/usr/local/etc/xray/grpc-config.json"
+
+select_config() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "        ADICIONAR CLIENTE XRAY"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Xray WS"
+  echo " [2] Xray gRPC"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " cfgop
+
+  case "$cfgop" in
+    1)
+      TARGET_CONF="$XRAY_WS_CONF"
+      TARGET_SERVICE="xray"
+      TARGET_LABEL="XRAY_WS"
+      ;;
+    2)
+      TARGET_CONF="$XRAY_GRPC_CONF"
+      TARGET_SERVICE="xray-grpc"
+      TARGET_LABEL="XRAY_GRPC"
+      ;;
+    0)
+      exit 0
+      ;;
+    *)
+      echo "Opção inválida."
+      sleep 1
+      select_config
+      ;;
+  esac
+}
+
+add_client() {
+  [[ -f "$TARGET_CONF" ]] || {
+    echo "Arquivo de configuração não encontrado: $TARGET_CONF"
+    echo
+    read -p "Enter para voltar..."
+    exit 1
+  }
+
+  read -p "Email/Nome do cliente: " client_email
+  [[ -z "$client_email" ]] && echo "Nome inválido." && read -p "Enter para voltar..." && exit 1
+
+  read -p "UUID (deixe vazio para gerar): " client_uuid
+  if [[ -z "$client_uuid" ]]; then
+    client_uuid="$(uuidgen)"
+  fi
+
+  python3 - "$TARGET_CONF" "$client_email" "$client_uuid" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+conf = Path(sys.argv[1])
+email = sys.argv[2]
+uuid = sys.argv[3]
+
+data = json.loads(conf.read_text())
+
+if "inbounds" not in data or not data["inbounds"]:
+    print("ERRO: inbounds não encontrados")
+    sys.exit(1)
+
+inb = data["inbounds"][0]
+proto = inb.get("protocol", "")
+
+settings = inb.setdefault("settings", {})
+clients = settings.setdefault("clients", [])
+
+for c in clients:
+    if c.get("email") == email:
+        print("ERRO: cliente com esse email já existe")
+        sys.exit(2)
+    if c.get("id") == uuid:
+        print("ERRO: cliente com esse UUID já existe")
+        sys.exit(3)
+
+if proto == "vmess":
+    new_client = {
+        "id": uuid,
+        "alterId": 0,
+        "email": email
+    }
+elif proto == "vless":
+    new_client = {
+        "id": uuid,
+        "email": email
+    }
+else:
+    print(f"ERRO: protocolo não suportado: {proto}")
+    sys.exit(4)
+
+clients.append(new_client)
+conf.write_text(json.dumps(data, indent=2))
+print(f"OK:{proto}:{uuid}:{email}")
+PY
+
+  rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo
+    echo "Falha ao adicionar cliente."
+    echo
+    read -p "Enter para voltar..."
+    exit 1
+  fi
+
+  systemctl restart "$TARGET_SERVICE" >/dev/null 2>&1 || true
+  /bin/loggerapi "XRAY_CLIENT_ADD" "target=${TARGET_LABEL} email=${client_email} uuid=${client_uuid}"
+
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Cliente adicionado com sucesso"
+  echo "Destino : ${TARGET_LABEL}"
+  echo "Email   : ${client_email}"
+  echo "UUID    : ${client_uuid}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  read -p "Enter para voltar..."
+}
+
+select_config
+add_client
