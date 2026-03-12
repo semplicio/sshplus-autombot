@@ -5,164 +5,249 @@ WS_CONF="$WS_DIR/ws.conf"
 WS_START="$WS_DIR/start.sh"
 WS_SERVICE="/etc/systemd/system/wsproxy.service"
 WSTUNNEL_BIN="/usr/local/bin/wstunnel"
+WSTUNNEL_VERSION="10.5.2"
 
 verde(){ echo -e "\033[1;32m$1\033[0m"; }
 amarelo(){ echo -e "\033[1;33m$1\033[0m"; }
 vermelho(){ echo -e "\033[1;31m$1\033[0m"; }
+azul(){ echo -e "\033[1;34m$1\033[0m"; }
 
 pause(){
-echo
-read -p "Enter para voltar..."
+  echo
+  read -p "Enter para voltar..." _
 }
 
 require_root(){
-if [[ "$(id -u)" != "0" ]]; then
-vermelho "Execute como root"
-exit 1
-fi
+  if [[ "$(id -u)" != "0" ]]; then
+    vermelho "Execute como root"
+    exit 1
+  fi
 }
 
 install_deps(){
-
-apt-get update -y >/dev/null 2>&1
-apt-get install -y curl wget dos2unix >/dev/null 2>&1
-
+  apt-get update -y >/dev/null 2>&1 || true
+  apt-get install -y curl wget tar dos2unix >/dev/null 2>&1 || {
+    vermelho "Falha ao instalar dependências básicas."
+    exit 1
+  }
 }
 
 detect_arch(){
+  local arch
+  arch="$(uname -m)"
 
-ARCH=$(uname -m)
-
-case "$ARCH" in
-aarch64|arm64)
-echo arm64
-;;
-x86_64|amd64)
-echo amd64
-;;
-*)
-vermelho "Arquitetura não suportada: $ARCH"
-exit 1
-;;
-esac
-
+  case "$arch" in
+    aarch64|arm64)
+      echo "arm64"
+      ;;
+    x86_64|amd64)
+      echo "amd64"
+      ;;
+    *)
+      vermelho "Arquitetura não suportada: $arch"
+      exit 1
+      ;;
+  esac
 }
 
 install_wstunnel(){
+  local arch file url tmp_dir
 
-ARCH=$(detect_arch)
+  arch="$(detect_arch)"
 
-if [[ "$ARCH" == "arm64" ]]; then
-URL="https://github.com/erebe/wstunnel/releases/latest/download/wstunnel_linux_arm64"
-else
-URL="https://github.com/erebe/wstunnel/releases/latest/download/wstunnel_linux_amd64"
-fi
+  case "$arch" in
+    arm64)
+      file="wstunnel_${WSTUNNEL_VERSION}_linux_arm64.tar.gz"
+      ;;
+    amd64)
+      file="wstunnel_${WSTUNNEL_VERSION}_linux_amd64.tar.gz"
+      ;;
+    *)
+      vermelho "Arquitetura inválida: $arch"
+      exit 1
+      ;;
+  esac
 
-verde "Instalando wstunnel..."
+  url="https://github.com/erebe/wstunnel/releases/download/v${WSTUNNEL_VERSION}/${file}"
+  tmp_dir="/tmp/wstunnel.$$"
 
-wget -qO "$WSTUNNEL_BIN" "$URL"
+  mkdir -p "$tmp_dir"
 
-chmod +x "$WSTUNNEL_BIN"
+  azul "Instalando wstunnel v${WSTUNNEL_VERSION} para arquitetura: $arch"
 
+  if ! curl -fsSL "$url" -o "$tmp_dir/wstunnel.tar.gz"; then
+    vermelho "Falha ao baixar o pacote do wstunnel."
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+
+  if ! tar -xzf "$tmp_dir/wstunnel.tar.gz" -C "$tmp_dir"; then
+    vermelho "Falha ao extrair o pacote do wstunnel."
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+
+  if [[ ! -f "$tmp_dir/wstunnel" ]]; then
+    vermelho "Binário wstunnel não encontrado após extração."
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+
+  install -m 755 "$tmp_dir/wstunnel" "$WSTUNNEL_BIN"
+  rm -rf "$tmp_dir"
+
+  if ! "$WSTUNNEL_BIN" --help >/dev/null 2>&1; then
+    vermelho "O binário do wstunnel falhou no teste."
+    exit 1
+  fi
+
+  verde "wstunnel instalado com sucesso em $WSTUNNEL_BIN"
 }
 
 create_dirs(){
-
-mkdir -p "$WS_DIR"
-
+  mkdir -p "$WS_DIR"
 }
 
 create_config(){
+  local ws_port ws_bind ws_target
 
-read -p "Porta WebSocket [8080]: " WS_PORT
-read -p "Bind [0.0.0.0]: " WS_BIND
-read -p "Destino SSH [127.0.0.1:22]: " WS_TARGET
+  echo
+  read -p "Porta WebSocket [8080]: " ws_port
+  read -p "Bind [0.0.0.0]: " ws_bind
+  read -p "Destino SSH [127.0.0.1:22]: " ws_target
 
-WS_PORT=${WS_PORT:-8080}
-WS_BIND=${WS_BIND:-0.0.0.0}
-WS_TARGET=${WS_TARGET:-127.0.0.1:22}
+  ws_port="${ws_port:-8080}"
+  ws_bind="${ws_bind:-0.0.0.0}"
+  ws_target="${ws_target:-127.0.0.1:22}"
 
-cat > "$WS_CONF" <<EOF
-WS_PORT=$WS_PORT
-WS_BIND=$WS_BIND
-WS_TARGET=$WS_TARGET
+  cat > "$WS_CONF" <<EOF
+WS_PORT=$ws_port
+WS_BIND=$ws_bind
+WS_TARGET=$ws_target
 EOF
 
+  chmod 644 "$WS_CONF"
+  verde "Configuração salva em $WS_CONF"
 }
 
 create_start(){
-
-cat > "$WS_START" <<'EOF'
+  cat > "$WS_START" <<'EOF'
 #!/usr/bin/env bash
+set -e
 
 source /usr/local/wsproxy/ws.conf
 
-exec /usr/local/bin/wstunnel -s ${WS_BIND}:${WS_PORT} -t ${WS_TARGET}
+WSTUNNEL_BIN="/usr/local/bin/wstunnel"
+
+if [ ! -x "$WSTUNNEL_BIN" ]; then
+  echo "wstunnel não encontrado em $WSTUNNEL_BIN"
+  exit 127
+fi
+
+exec "$WSTUNNEL_BIN" -s "${WS_BIND}:${WS_PORT}" -t "${WS_TARGET}"
 EOF
 
-chmod +x "$WS_START"
-
+  dos2unix "$WS_START" >/dev/null 2>&1 || true
+  chmod +x "$WS_START"
+  verde "Script de inicialização criado em $WS_START"
 }
 
 create_service(){
-
-cat > "$WS_SERVICE" <<EOF
+  cat > "$WS_SERVICE" <<EOF
 [Unit]
 Description=SSH WebSocket Proxy
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
+Type=simple
 ExecStart=$WS_START
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable wsproxy.service >/dev/null 2>&1
+  chmod 644 "$WS_SERVICE"
+  systemctl daemon-reload
+  systemctl enable wsproxy.service >/dev/null 2>&1 || true
+  verde "Serviço systemd criado em $WS_SERVICE"
+}
 
+validate_runtime(){
+  if ! bash -n "$WS_START"; then
+    vermelho "Erro de sintaxe no start.sh"
+    exit 1
+  fi
+
+  if ! "$WSTUNNEL_BIN" --help >/dev/null 2>&1; then
+    vermelho "Falha ao validar o wstunnel."
+    exit 1
+  fi
+}
+
+stop_old_service_if_needed(){
+  systemctl stop wsproxy.service >/dev/null 2>&1 || true
 }
 
 start_service(){
-
-systemctl restart wsproxy.service
-
+  if ! systemctl restart wsproxy.service; then
+    vermelho "Falha ao iniciar o wsproxy.service"
+    return 1
+  fi
 }
 
 show_status(){
+  clear
+  azul "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "         STATUS WEBSOCKET SSH"
+  azul "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
 
-clear
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "   STATUS WEBSOCKET SSH"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo
+  if [[ -f "$WS_CONF" ]]; then
+    cat "$WS_CONF"
+  else
+    echo "Arquivo de configuração não encontrado."
+  fi
 
-cat "$WS_CONF"
+  echo
+  systemctl status wsproxy.service --no-pager -l || true
+  echo
+}
 
-echo
-systemctl status wsproxy.service --no-pager
-
+show_logs(){
+  azul "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "LOGS DO SERVIÇO"
+  azul "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  journalctl -u wsproxy.service -n 20 --no-pager || true
 }
 
 main(){
+  clear
+  require_root
 
-clear
-require_root
+  verde "Instalador WebSocket SSH"
 
-verde "Instalador WebSocket SSH"
+  install_deps
+  create_dirs
+  install_wstunnel
+  create_config
+  create_start
+  create_service
+  validate_runtime
+  stop_old_service_if_needed
 
-install_deps
-create_dirs
-install_wstunnel
-create_config
-create_start
-create_service
-start_service
-show_status
+  if ! start_service; then
+    show_status
+    show_logs
+    pause
+    exit 1
+  fi
 
-pause
-
+  show_status
+  show_logs
+  pause
 }
 
-main
+main "$@"
