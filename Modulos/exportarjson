@@ -1,0 +1,29 @@
+#!/bin/bash
+
+OUT_DIR="/root/sshplus-export"
+DATE_TAG="$(date +%Y%m%d-%H%M%S)"
+OUT_FILE="${OUT_DIR}/status-${DATE_TAG}.json"
+
+mkdir -p "$OUT_DIR"
+
+if ! command -v jsonstatus >/dev/null 2>&1; then
+  echo "Módulo jsonstatus não encontrado."
+  exit 1
+fi
+
+jsonstatus > "$OUT_FILE" || {
+  echo "Falha ao gerar JSON."
+  exit 1
+}
+
+/bin/loggerapi "JSON_EXPORT" "arquivo=${OUT_FILE}"
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "JSON exportado com sucesso"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Arquivo: $OUT_FILE"
+echo
+ls -lh "$OUT_FILE" 2>/dev/null
+echo
+read -p "Enter para voltar..."
