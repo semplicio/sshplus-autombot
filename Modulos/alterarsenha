@@ -13,6 +13,8 @@ read -p "Nova senha: " password
 
 echo "${username}:${password}" | chpasswd || exit 1
 
+/bin/loggerapi "USER_PASSWORD" "usuario=${username} senha_alterada=sim"
+
 echo
 echo "Senha alterada com sucesso para: $username"
 echo
