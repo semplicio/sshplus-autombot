@@ -80,6 +80,7 @@ show_options() {
   echo " [19] Instalar WebSocket SSH"
   echo " [20] Instalar Xray WS"
   echo " [21] Instalar OpenVPN"
+  echo " [22] Instalar Nginx + TLS + WS"
   echo " [0] Sair"
   echo
 }
@@ -164,6 +165,7 @@ validate_modules() {
     installws
     installxray
     installopenvpn
+    installnginxws
   )
 
   for mod in "${mods[@]}"; do
@@ -207,6 +209,7 @@ main_menu() {
       19) clear; run_module installws ;;
       20) clear; run_module installxray ;;
       21) clear; run_module installopenvpn ;;
+      22) clear; run_module installnginxws ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
