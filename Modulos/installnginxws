@@ -1,0 +1,180 @@
+#!/bin/bash
+
+NGINX_SITE="/etc/nginx/sites-available/sshplus"
+NGINX_LINK="/etc/nginx/sites-enabled/sshplus"
+
+install_nginx_ws() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "     INSTALAÇÃO NGINX + TLS + WS"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  read -p "Domínio apontado para esta VPS: " domain
+  [[ -z "$domain" ]] && echo "Domínio inválido." && read -p "Enter para voltar..." && return
+
+  read -p "Porta interna do WebSocket SSH [8080]: " ws_port
+  ws_port="${ws_port:-8080}"
+
+  read -p "Porta interna do Xray [10000]: " xray_port
+  xray_port="${xray_port:-10000}"
+
+  if [[ ! "$ws_port" =~ ^[0-9]+$ ]]; then
+    echo "Porta WS inválida."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  if [[ ! "$xray_port" =~ ^[0-9]+$ ]]; then
+    echo "Porta Xray inválida."
+    read -p "Enter para voltar..."
+    return
+  fi
+
+  apt update -y
+  apt install -y nginx certbot python3-certbot-nginx curl
+
+  rm -f /etc/nginx/sites-enabled/default
+  rm -f /etc/nginx/sites-available/default
+
+  cat > "$NGINX_SITE" <<EOF
+server {
+    listen 80;
+    server_name ${domain};
+
+    location / {
+        return 200 'SSHPLUS AutomBot ARM';
+        add_header Content-Type text/plain;
+    }
+
+    location /ws {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:${ws_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+
+    location /vmess {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:${xray_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+EOF
+
+  ln -sf "$NGINX_SITE" "$NGINX_LINK"
+
+  nginx -t || {
+    echo "Erro na configuração do Nginx."
+    read -p "Enter para voltar..."
+    return
+  }
+
+  systemctl enable nginx
+  systemctl restart nginx
+
+  echo
+  echo "Solicitando certificado SSL..."
+  certbot --nginx -d "$domain" --non-interactive --register-unsafely-without-email --agree-tos --redirect || {
+    echo
+    echo "Falha ao gerar certificado SSL."
+    echo "Verifique:"
+    echo "1. domínio apontando para a VPS"
+    echo "2. porta 80 liberada"
+    echo "3. Nginx ativo"
+    echo
+    read -p "Enter para voltar..."
+    return
+  }
+
+  systemctl restart nginx
+
+  /bin/loggerapi "NGINX_TLS_INSTALL" "dominio=${domain} ws_port=${ws_port} xray_port=${xray_port}"
+
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Nginx + TLS configurado com sucesso"
+  echo "Domínio : ${domain}"
+  echo "WS Path : /ws"
+  echo "VMESS   : /vmess"
+  echo "HTTPS   : 443"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  read -p "Enter para voltar..."
+}
+
+status_nginx_ws() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "       STATUS NGINX + TLS + WS"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  if [[ -f "$NGINX_SITE" ]]; then
+    cat "$NGINX_SITE"
+    echo
+  else
+    echo "Arquivo de configuração não encontrado."
+    echo
+  fi
+
+  systemctl status nginx --no-pager
+  echo
+  read -p "Enter para voltar..."
+}
+
+restart_nginx_ws() {
+  systemctl restart nginx
+  /bin/loggerapi "NGINX_TLS_RESTART" "nginx reiniciado"
+  echo
+  echo "Nginx reiniciado."
+  echo
+  read -p "Enter para voltar..."
+}
+
+remove_nginx_ws() {
+  read -p "Confirma remover configuração Nginx/TLS? [s/N]: " confirm
+  [[ "$confirm" != "s" && "$confirm" != "S" ]] && return
+
+  rm -f "$NGINX_LINK"
+  rm -f "$NGINX_SITE"
+  systemctl restart nginx >/dev/null 2>&1 || true
+
+  /bin/loggerapi "NGINX_TLS_REMOVE" "configuracao removida"
+
+  echo
+  echo "Configuração removida."
+  echo
+  read -p "Enter para voltar..."
+}
+
+while true; do
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "       GERENCIAR NGINX + TLS + WS"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " [1] Instalar / Reconfigurar"
+  echo " [2] Ver status"
+  echo " [3] Reiniciar"
+  echo " [4] Remover configuração"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+  case "$op" in
+    1) install_nginx_ws ;;
+    2) status_nginx_ws ;;
+    3) restart_nginx_ws ;;
+    4) remove_nginx_ws ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
