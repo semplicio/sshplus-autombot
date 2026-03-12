@@ -1,0 +1,39 @@
+#!/bin/bash
+
+LIMIT_DIR="/etc/SSHPlus/limites"
+mkdir -p "$LIMIT_DIR"
+
+read -p "Nome do usuário: " username
+[[ -z "$username" ]] && echo "Usuário inválido." && exit 1
+
+if id "$username" >/dev/null 2>&1; then
+  echo "Usuário já existe."
+  exit 1
+fi
+
+read -p "Senha: " password
+[[ -z "$password" ]] && echo "Senha inválida." && exit 1
+
+read -p "Dias até expirar: " days
+[[ ! "$days" =~ ^[0-9]+$ ]] && echo "Dias inválidos." && exit 1
+
+read -p "Limite de conexões: " limit
+[[ ! "$limit" =~ ^[0-9]+$ ]] && echo "Limite inválido." && exit 1
+
+expiry_date="$(date -d "+$days days" +%Y-%m-%d)"
+
+useradd -e "$expiry_date" -M -s /bin/false "$username" || exit 1
+echo "${username}:${password}" | chpasswd || exit 1
+echo "$limit" > "${LIMIT_DIR}/${username}"
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Usuário criado com sucesso"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Usuário : $username"
+echo "Senha   : $password"
+echo "Limite  : $limit"
+echo "Expira  : $expiry_date"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+read -p "Enter para voltar..."
