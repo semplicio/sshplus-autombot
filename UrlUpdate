@@ -1,0 +1,29 @@
+{
+  "Version": "1.0.0",
+  "ReleaseNotes": "Primeira versão do SSHPLUS AutomBot ARM",
+  "UrlUpdate": "https://raw.githubusercontent.com/semplicio/sshplus-autombot/main/UrlUpdate",
+  "Sms": "",
+  "EmailFeedback": "",
+  "UrlContato": "",
+  "UrlTermos": "",
+  "CheckUser": "false",
+  "Udp": [
+    {
+      "Porta": "7300"
+    }
+  ],
+  "Servers": [
+    {
+      "Name": "SSHPLUS AutomBot ARM",
+      "TYPE": "free",
+      "FLAG": "br.png",
+      "ServerIP": "SEU_IP_OU_DOMINIO",
+      "CheckUser": "",
+      "ServerPort": "22",
+      "SSLPort": "443",
+      "USER": "",
+      "PASS": ""
+    }
+  ],
+  "Networks": []
+}
