@@ -82,6 +82,7 @@ show_options() {
   echo " [21] Instalar OpenVPN"
   echo " [22] Instalar Nginx + TLS + WS"
   echo " [23] Instalar Xray gRPC"
+  echo " [24] Camuflagem e página fake"
   echo " [0] Sair"
   echo
 }
@@ -168,6 +169,7 @@ validate_modules() {
     installopenvpn
     installnginxws
     installxraygrpc
+    installcamuflagem
   )
 
   for mod in "${mods[@]}"; do
@@ -213,6 +215,7 @@ main_menu() {
       21) clear; run_module installopenvpn ;;
       22) clear; run_module installnginxws ;;
       23) clear; run_module installxraygrpc ;;
+      24) clear; run_module installcamuflagem ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
