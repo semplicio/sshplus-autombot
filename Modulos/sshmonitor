@@ -1,14 +1,35 @@
 #!/bin/bash
 
 clear
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "            MONITOR SSH ONLINE"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "                 MONITOR SSH ONLINE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 
-ps -ef | grep '[s]shd:' | grep -v root | awk '{print $1, $8, $9, $10, $11}'
+sessions="$(ps -eo user,pid,cmd | grep '[s]shd:' | grep -v root)"
+
+if [[ -z "$sessions" ]]; then
+  echo "Nenhuma sessão SSH ativa."
+  echo
+  read -p "Enter para voltar..."
+  exit 0
+fi
+
+printf "%-20s %-10s %-40s\n" "USUARIO" "PID" "PROCESSO"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+echo "$sessions" | awk '
+{
+  user=$1
+  pid=$2
+  $1=""; $2=""
+  sub(/^  */, "", $0)
+  printf "%-20s %-10s %-40s\n", user, pid, $0
+}
+'
+
 echo
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Total: $(ps -ef | grep '[s]shd:' | grep -v root | wc -l)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Total de sessões: $(echo "$sessions" | wc -l)"
 echo
 read -p "Enter para voltar..."
