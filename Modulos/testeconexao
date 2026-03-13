@@ -1,0 +1,202 @@
+#!/bin/bash
+
+require_root() {
+  if [[ "$(id -u)" != "0" ]]; then
+    echo "Execute como root."
+    exit 1
+  fi
+}
+
+pause() {
+  echo
+  read -p "Enter para voltar..." _
+}
+
+show_header() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "       TESTE DE CONEXÃO"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+}
+
+check_dependencies() {
+  local missing=0
+
+  for cmd in curl nc ss; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      echo "Dependência ausente: $cmd"
+      missing=1
+    fi
+  done
+
+  if [[ "$missing" -eq 1 ]]; then
+    echo
+    echo "Instale dependências com:"
+    echo "apt update && apt install -y curl netcat-openbsd iproute2"
+    pause
+    exit 1
+  fi
+}
+
+show_port_status() {
+  echo "[PORTAS EM ESCUTA]"
+  ss -lntp | grep -E ':22 |:3128 |:443 |:8080 ' || true
+  echo
+}
+
+test_http_proxy() {
+  local host="$1"
+  local port="$2"
+
+  echo "[TESTE PROXY HTTP]"
+  echo "curl -x http://${host}:${port} http://ifconfig.me"
+  echo
+
+  curl -x "http://${host}:${port}" --max-time 15 http://ifconfig.me 2>&1
+  echo
+}
+
+test_connect_ssh() {
+  local proxy_host="$1"
+  local proxy_port="$2"
+  local dst_host="$3"
+  local dst_port="$4"
+
+  echo "[TESTE CONNECT PARA SSH]"
+  echo
+
+  printf 'CONNECT %s:%s HTTP/1.1\r\nHost: %s\r\nConnection: Keep-Alive\r\n\r\n' \
+    "$dst_host" "$dst_port" "$dst_host" | nc -v "$proxy_host" "$proxy_port"
+  echo
+}
+
+test_ssh_banner_direct() {
+  local host="$1"
+  local port="$2"
+
+  echo "[TESTE BANNER SSH DIRETO]"
+  echo
+
+  timeout 10 bash -c "exec 3<>/dev/tcp/${host}/${port}; cat <&3 | head -n 1" 2>/dev/null || true
+  echo
+}
+
+test_ssh_banner_via_proxy() {
+  local proxy_host="$1"
+  local proxy_port="$2"
+  local dst_host="$3"
+  local dst_port="$4"
+
+  echo "[TESTE BANNER SSH VIA PROXY]"
+  echo
+
+  {
+    printf 'CONNECT %s:%s HTTP/1.1\r\nHost: %s\r\nConnection: Keep-Alive\r\n\r\n' \
+      "$dst_host" "$dst_port" "$dst_host"
+    sleep 1
+  } | nc -v "$proxy_host" "$proxy_port" | head -n 5
+
+  echo
+}
+
+full_test() {
+  show_header
+
+  local host proxy_port ssh_port
+  read -p "Host/Domínio [vpn.autombot.com.br]: " host
+  host="${host:-vpn.autombot.com.br}"
+
+  read -p "Porta do Proxy HTTP [3128]: " proxy_port
+  proxy_port="${proxy_port:-3128}"
+
+  read -p "Porta SSH [22]: " ssh_port
+  ssh_port="${ssh_port:-22}"
+
+  echo
+  show_port_status
+  test_http_proxy "$host" "$proxy_port"
+  test_connect_ssh "$host" "$proxy_port" "$host" "$ssh_port"
+  test_ssh_banner_direct "$host" "$ssh_port"
+  test_ssh_banner_via_proxy "$host" "$proxy_port" "$host" "$ssh_port"
+
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Leitura rápida:"
+  echo "- Se aparecer 'HTTP/1.1 200 Connection established', o proxy aceitou o CONNECT."
+  echo "- Se aparecer 'SSH-2.0-...', o SSH respondeu."
+  echo "- Se o direto funciona e via proxy também, servidor está ok."
+  echo "- Se o app falhar mesmo assim, o problema está na configuração do app/payload."
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  pause
+}
+
+quick_proxy_test() {
+  show_header
+
+  local host proxy_port
+  read -p "Host/Domínio [vpn.autombot.com.br]: " host
+  host="${host:-vpn.autombot.com.br}"
+
+  read -p "Porta do Proxy HTTP [3128]: " proxy_port
+  proxy_port="${proxy_port:-3128}"
+
+  echo
+  test_http_proxy "$host" "$proxy_port"
+  pause
+}
+
+quick_connect_test() {
+  show_header
+
+  local host proxy_port ssh_port
+  read -p "Host/Domínio [vpn.autombot.com.br]: " host
+  host="${host:-vpn.autombot.com.br}"
+
+  read -p "Porta do Proxy HTTP [3128]: " proxy_port
+  proxy_port="${proxy_port:-3128}"
+
+  read -p "Porta SSH [22]: " ssh_port
+  ssh_port="${ssh_port:-22}"
+
+  echo
+  test_connect_ssh "$host" "$proxy_port" "$host" "$ssh_port"
+  pause
+}
+
+quick_banner_test() {
+  show_header
+
+  local host ssh_port
+  read -p "Host/Domínio [vpn.autombot.com.br]: " host
+  host="${host:-vpn.autombot.com.br}"
+
+  read -p "Porta SSH [22]: " ssh_port
+  ssh_port="${ssh_port:-22}"
+
+  echo
+  test_ssh_banner_direct "$host" "$ssh_port"
+  pause
+}
+
+check_dependencies
+require_root
+
+while true; do
+  show_header
+  echo " [1] Teste completo"
+  echo " [2] Teste do Proxy HTTP"
+  echo " [3] Teste CONNECT proxy -> SSH"
+  echo " [4] Teste banner SSH direto"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+
+  case "$op" in
+    1) full_test ;;
+    2) quick_proxy_test ;;
+    3) quick_connect_test ;;
+    4) quick_banner_test ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
