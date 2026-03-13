@@ -35,12 +35,36 @@ detect_default_iface() {
 }
 
 ensure_badvpn_binary() {
+  local arch project_root source_file
+
   if [[ -x /bin/badvpn-udpgw ]]; then
     return 0
   fi
 
   if [[ -x /usr/bin/badvpn-udpgw ]]; then
     ln -sf /usr/bin/badvpn-udpgw /bin/badvpn-udpgw
+    chmod +x /bin/badvpn-udpgw
+    return 0
+  fi
+
+  project_root="/usr/local/lib/sshplus"
+
+  arch="$(uname -m)"
+  case "$arch" in
+    aarch64|arm64|armv7l|armv8l)
+      source_file="${project_root}/ARM/badvpn-udpgw"
+      ;;
+    x86_64|amd64)
+      source_file="${project_root}/bin/badvpn-udpgw"
+      ;;
+    *)
+      source_file="${project_root}/bin/badvpn-udpgw"
+      ;;
+  esac
+
+  if [[ -f "$source_file" ]]; then
+    cp -f "$source_file" /bin/badvpn-udpgw
+    chmod +x /bin/badvpn-udpgw
     return 0
   fi
 
