@@ -46,3 +46,4 @@ payloadprofiles
 payloadprofileexport
 installtls
 tlsrenew
+sockshttpstatus
