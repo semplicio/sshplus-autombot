@@ -1,25 +1,135 @@
 #!/bin/bash
 
-clear
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "      MONITOR DE CONEXÕES"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo
-echo "[1] Ver logs do Squid"
-echo "[2] Ver logs do SSH"
-echo "[3] Ver tráfego 3128"
-echo "[4] Ver tráfego 22"
-echo "[5] Ver tráfego 3128 e 22"
-echo "[0] Voltar"
-echo
-read -p "Escolha uma opção: " op
+require_root() {
+  if [[ "$(id -u)" != "0" ]]; then
+    echo "Execute como root."
+    exit 1
+  fi
+}
 
-case "$op" in
-  1) tail -f /var/log/squid/access.log ;;
-  2) tail -f /var/log/auth.log ;;
-  3) tcpdump -nni any port 3128 ;;
-  4) tcpdump -nni any port 22 ;;
-  5) tcpdump -nni any 'port 3128 or port 22' ;;
-  0) exit 0 ;;
-  *) echo "Opção inválida."; sleep 1 ;;
-esac
+pause() {
+  echo
+  read -p "Enter para voltar..." _
+}
+
+show_header() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "        MONITOR AO VIVO"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+}
+
+show_ports() {
+  echo "[PORTAS EM ESCUTA]"
+  ss -lntp | grep -E ':22 |:80 |:443 |:3128 |:8080 ' || true
+  echo
+}
+
+monitor_squid() {
+  show_header
+  echo "[MONITOR SQUID ACCESS.LOG]"
+  echo "CTRL+C para sair"
+  echo
+  touch /var/log/squid/access.log
+  tail -f /var/log/squid/access.log
+}
+
+monitor_squid_cache() {
+  show_header
+  echo "[MONITOR SQUID CACHE.LOG]"
+  echo "CTRL+C para sair"
+  echo
+  touch /var/log/squid/cache.log
+  tail -f /var/log/squid/cache.log
+}
+
+monitor_ssh() {
+  show_header
+  echo "[MONITOR SSH / AUTH]"
+  echo "CTRL+C para sair"
+  echo
+
+  if [[ -f /var/log/auth.log ]]; then
+    tail -f /var/log/auth.log
+  else
+    journalctl -u ssh -f --no-pager
+  fi
+}
+
+monitor_ports_3128() {
+  show_header
+  echo "[TRAFEGO PORTA 3128]"
+  echo "CTRL+C para sair"
+  echo
+  tcpdump -nni any port 3128
+}
+
+monitor_ports_22() {
+  show_header
+  echo "[TRAFEGO PORTA 22]"
+  echo "CTRL+C para sair"
+  echo
+  tcpdump -nni any port 22
+}
+
+monitor_ports_both() {
+  show_header
+  echo "[TRAFEGO PORTAS 3128 E 22]"
+  echo "CTRL+C para sair"
+  echo
+  tcpdump -nni any 'port 3128 or port 22'
+}
+
+monitor_systemd() {
+  show_header
+  echo "[LOGS DE SERVICOS]"
+  echo "CTRL+C para sair"
+  echo
+  journalctl -u squid -u ssh -f --no-pager
+}
+
+status_summary() {
+  show_header
+  show_ports
+
+  echo "[STATUS SQUID]"
+  systemctl status squid -l --no-pager || true
+  echo
+
+  echo "[STATUS SSH]"
+  systemctl status ssh -l --no-pager || systemctl status sshd -l --no-pager || true
+  echo
+
+  pause
+}
+
+require_root
+
+while true; do
+  show_header
+  echo " [1] Resumo rápido"
+  echo " [2] Monitor Squid access.log"
+  echo " [3] Monitor Squid cache.log"
+  echo " [4] Monitor SSH/auth.log"
+  echo " [5] Monitor tráfego porta 3128"
+  echo " [6] Monitor tráfego porta 22"
+  echo " [7] Monitor tráfego 3128 + 22"
+  echo " [8] Monitor systemd (squid + ssh)"
+  echo " [0] Voltar"
+  echo
+  read -p "Escolha uma opção: " op
+
+  case "$op" in
+    1) status_summary ;;
+    2) monitor_squid ;;
+    3) monitor_squid_cache ;;
+    4) monitor_ssh ;;
+    5) monitor_ports_3128 ;;
+    6) monitor_ports_22 ;;
+    7) monitor_ports_both ;;
+    8) monitor_systemd ;;
+    0) exit 0 ;;
+    *) echo "Opção inválida."; sleep 1 ;;
+  esac
+done
