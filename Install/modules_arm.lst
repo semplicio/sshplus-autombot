@@ -51,3 +51,4 @@ installsockshttp
 sockshttpstatus
 conexaomonitor
 testeconexao
+proxyhttpmulti
