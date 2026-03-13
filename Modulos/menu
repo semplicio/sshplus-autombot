@@ -181,6 +181,7 @@ validate_modules() {
     testeconexao
     proxyportas
     proxyhttpmulti
+    badvpn
   )
 
   for mod in "${mods[@]}"; do
@@ -271,6 +272,7 @@ menu_conexoes() {
     echo " [12] Teste de conexão"
     echo " [13] Gerenciar portas de conexão"
     echo " [14] Gerenciar Proxy HTTP multiporta"
+    echo " [15] Gerenciar BadVPN UDP"
     echo " [0] Voltar"
     echo
     read -p "Escolha uma opção: " opcao
@@ -290,6 +292,7 @@ menu_conexoes() {
       12) clear; run_module testeconexao ;;
       13) clear; run_module proxyportas ;;
       14) clear; run_module proxyhttpmulti ;;
+      15) clear; run_module badvpn ;;
       0) break ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
