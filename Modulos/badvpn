@@ -5,6 +5,7 @@ SYSCTL_FILE="/etc/sysctl.d/99-autombot-network.conf"
 CONFIG_DIR="/etc/autombot"
 CONFIG_FILE="${CONFIG_DIR}/badvpn.conf"
 PROJECT_ROOT="/usr/local/lib/sshplus"
+BUILD_LOG="/tmp/autombot-badvpn-build.log"
 
 verde() { echo -e "\033[1;32m$1\033[0m"; }
 amarelo() { echo -e "\033[1;33m$1\033[0m"; }
@@ -24,6 +25,10 @@ header() {
   branco "                 BADVPN AUTOMBOT                  "
   roxo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
+}
+
+log() {
+  echo "[$(date '+%F %T')] $*" >> "$BUILD_LOG"
 }
 
 check_root() {
@@ -78,7 +83,7 @@ net.ipv4.tcp_keepalive_time=600
 net.ipv4.tcp_mtu_probing=1
 EOF
 
-  sysctl --system >/dev/null 2>&1 || true
+  sysctl --system >>"$BUILD_LOG" 2>&1 || true
 }
 
 ensure_nat() {
@@ -91,22 +96,22 @@ ensure_nat() {
   fi
 
   if ! iptables -t nat -C POSTROUTING -o "$iface" -j MASQUERADE 2>/dev/null; then
-    iptables -t nat -A POSTROUTING -o "$iface" -j MASQUERADE
+    iptables -t nat -A POSTROUTING -o "$iface" -j MASQUERADE >>"$BUILD_LOG" 2>&1
   fi
 
   if ! iptables -C FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; then
-    iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+    iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT >>"$BUILD_LOG" 2>&1
   fi
 
   if ! iptables -C FORWARD -j ACCEPT 2>/dev/null; then
-    iptables -A FORWARD -j ACCEPT
+    iptables -A FORWARD -j ACCEPT >>"$BUILD_LOG" 2>&1
   fi
 
   if command -v netfilter-persistent >/dev/null 2>&1; then
-    netfilter-persistent save >/dev/null 2>&1 || true
+    netfilter-persistent save >>"$BUILD_LOG" 2>&1 || true
   elif [[ -d /etc/iptables || ! -e /etc/iptables ]]; then
     mkdir -p /etc/iptables
-    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+    iptables-save > /etc/iptables/rules.v4 2>>"$BUILD_LOG" || true
   fi
 
   return 0
@@ -116,10 +121,9 @@ allow_badvpn_port() {
   local porta="$1"
   ensure_config
 
-  # badvpn-udpgw escuta em TCP
   if [[ "${BADVPN_BIND}" == "0.0.0.0" ]]; then
     if command -v ufw >/dev/null 2>&1; then
-      ufw allow "${porta}/tcp" >/dev/null 2>&1 || true
+      ufw allow "${porta}/tcp" >>"$BUILD_LOG" 2>&1 || true
     fi
   fi
 }
@@ -130,7 +134,7 @@ remove_badvpn_port() {
 
   if [[ "${BADVPN_BIND}" == "0.0.0.0" ]]; then
     if command -v ufw >/dev/null 2>&1; then
-      ufw delete allow "${porta}/tcp" >/dev/null 2>&1 || true
+      ufw delete allow "${porta}/tcp" >>"$BUILD_LOG" 2>&1 || true
     fi
   fi
 }
@@ -144,57 +148,14 @@ is_valid_port() {
 
 install_deps_for_build() {
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -y >/dev/null 2>&1 || return 1
-  apt-get install -y git gcc g++ make cmake build-essential wget curl >/dev/null 2>&1 || return 1
+  log "Instalando dependências de build"
+  apt-get update -y >>"$BUILD_LOG" 2>&1 || return 1
+  apt-get install -y git gcc g++ make cmake build-essential wget curl ca-certificates >>"$BUILD_LOG" 2>&1 || return 1
   return 0
 }
 
-build_badvpn_from_source() {
-  local build_dir="/tmp/autombot-badvpn-build"
-
-  branco "Compilando badvpn-udpgw automaticamente..."
-  install_deps_for_build || return 1
-
-  rm -rf "$build_dir"
-  git clone https://github.com/ambrop72/badvpn.git "$build_dir" >/dev/null 2>&1 || return 1
-  cd "$build_dir" || return 1
-
-  if [[ -x ./compile-udpgw.sh ]]; then
-    chmod +x ./compile-udpgw.sh
-    ./compile-udpgw.sh >/dev/null 2>&1 || return 1
-    if [[ -f ./badvpn-udpgw ]]; then
-      cp -f ./badvpn-udpgw /bin/badvpn-udpgw
-      chmod +x /bin/badvpn-udpgw
-      return 0
-    fi
-  fi
-
-  mkdir -p build
-  cd build || return 1
-  cmake .. -DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1 >/dev/null 2>&1 || return 1
-  make -j"$(nproc)" >/dev/null 2>&1 || return 1
-
-  if [[ -f udpgw/badvpn-udpgw ]]; then
-    cp -f udpgw/badvpn-udpgw /bin/badvpn-udpgw
-    chmod +x /bin/badvpn-udpgw
-    return 0
-  fi
-
-  return 1
-}
-
-ensure_badvpn_binary() {
+copy_project_binary() {
   local arch source_file
-
-  if [[ -x /bin/badvpn-udpgw ]]; then
-    return 0
-  fi
-
-  if [[ -x /usr/bin/badvpn-udpgw ]]; then
-    ln -sf /usr/bin/badvpn-udpgw /bin/badvpn-udpgw
-    chmod +x /bin/badvpn-udpgw
-    return 0
-  fi
 
   arch="$(uname -m)"
   case "$arch" in
@@ -209,12 +170,77 @@ ensure_badvpn_binary() {
       ;;
   esac
 
+  log "Tentando usar binário do projeto: $source_file"
+
   if [[ -f "$source_file" ]]; then
-    cp -f "$source_file" /bin/badvpn-udpgw
-    chmod +x /bin/badvpn-udpgw
+    cp -f "$source_file" /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+    chmod +x /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+    /bin/badvpn-udpgw --help >>"$BUILD_LOG" 2>&1 || true
     return 0
   fi
 
+  return 1
+}
+
+build_badvpn_from_source() {
+  local build_dir="/tmp/autombot-badvpn-build"
+
+  branco "Compilando badvpn-udpgw automaticamente..."
+  log "Iniciando compilação automática"
+
+  install_deps_for_build || return 1
+
+  rm -rf "$build_dir"
+  git clone https://github.com/ambrop72/badvpn.git "$build_dir" >>"$BUILD_LOG" 2>&1 || return 1
+  cd "$build_dir" || return 1
+
+  if [[ -x ./compile-udpgw.sh || -f ./compile-udpgw.sh ]]; then
+    chmod +x ./compile-udpgw.sh >>"$BUILD_LOG" 2>&1
+    ./compile-udpgw.sh >>"$BUILD_LOG" 2>&1 || true
+
+    if [[ -f ./badvpn-udpgw ]]; then
+      cp -f ./badvpn-udpgw /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+      chmod +x /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+      return 0
+    fi
+  fi
+
+  mkdir -p build
+  cd build || return 1
+  cmake .. -DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1 >>"$BUILD_LOG" 2>&1 || return 1
+  make -j1 >>"$BUILD_LOG" 2>&1 || return 1
+
+  if [[ -f udpgw/badvpn-udpgw ]]; then
+    cp -f udpgw/badvpn-udpgw /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+    chmod +x /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+    return 0
+  fi
+
+  if [[ -f ./badvpn-udpgw ]]; then
+    cp -f ./badvpn-udpgw /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+    chmod +x /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+    return 0
+  fi
+
+  return 1
+}
+
+ensure_badvpn_binary() {
+  : > "$BUILD_LOG"
+
+  if [[ -x /bin/badvpn-udpgw ]]; then
+    log "Usando /bin/badvpn-udpgw"
+    return 0
+  fi
+
+  if [[ -x /usr/bin/badvpn-udpgw ]]; then
+    log "Usando /usr/bin/badvpn-udpgw"
+    ln -sf /usr/bin/badvpn-udpgw /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+    chmod +x /bin/badvpn-udpgw >>"$BUILD_LOG" 2>&1
+    return 0
+  fi
+
+  copy_project_binary && return 0
   build_badvpn_from_source && return 0
 
   return 1
@@ -239,7 +265,7 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 
-  systemctl daemon-reload
+  systemctl daemon-reload >>"$BUILD_LOG" 2>&1
 }
 
 start_port() {
@@ -252,6 +278,9 @@ start_port() {
 
   if ! ensure_badvpn_binary; then
     vermelho "Falha ao instalar/compilar o badvpn-udpgw."
+    echo
+    echo "Log detalhado:"
+    echo "  $BUILD_LOG"
     return 1
   fi
 
@@ -260,7 +289,7 @@ start_port() {
   ensure_nat || return 1
   allow_badvpn_port "$porta"
 
-  systemctl enable --now "autombot-badvpn@${porta}" >/dev/null 2>&1
+  systemctl enable --now "autombot-badvpn@${porta}" >>"$BUILD_LOG" 2>&1
 
   if systemctl is-active --quiet "autombot-badvpn@${porta}"; then
     verde "BadVPN ativo na porta TCP $porta."
@@ -268,6 +297,9 @@ start_port() {
   fi
 
   vermelho "Falha ao ativar BadVPN na porta $porta."
+  echo
+  echo "Log detalhado:"
+  echo "  $BUILD_LOG"
   return 1
 }
 
@@ -318,6 +350,7 @@ show_status() {
     verde "Binário badvpn-udpgw: OK"
   else
     vermelho "Binário badvpn-udpgw: AUSENTE"
+    echo "Log: $BUILD_LOG"
   fi
 
   local iface
@@ -346,6 +379,8 @@ install_base() {
     echo "  3) usar o binário do projeto"
     echo "  4) compilar automaticamente do source"
     echo
+    echo "Log detalhado:"
+    echo "  $BUILD_LOG"
     pause
     return 1
   fi
@@ -490,6 +525,19 @@ view_logs() {
 
   echo
   journalctl -u "autombot-badvpn@${porta}" -n 50 --no-pager 2>/dev/null || vermelho "Sem logs para esta porta."
+  echo
+  echo "Log de build:"
+  echo "  $BUILD_LOG"
+  pause
+}
+
+show_build_log() {
+  header
+  if [[ -f "$BUILD_LOG" ]]; then
+    tail -n 120 "$BUILD_LOG"
+  else
+    amarelo "Log de build ainda não foi gerado."
+  fi
   pause
 }
 
@@ -509,6 +557,7 @@ badvpn_menu() {
     echo " [8] Alterar modo de bind (${BADVPN_BIND})"
     echo " [9] Ajustar limites (${BADVPN_MAX_CLIENTS}/${BADVPN_MAX_CONN_PER_CLIENT})"
     echo " [10] Reiniciar instâncias BadVPN"
+    echo " [11] Ver log de build"
     echo " [0] Voltar"
     echo
     read -p "Escolha uma opção: " opcao
@@ -524,6 +573,7 @@ badvpn_menu() {
       8) set_bind_mode ;;
       9) set_limits ;;
       10) restart_all_badvpn ;;
+      11) show_build_log ;;
       0) exit 0 ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
