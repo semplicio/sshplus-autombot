@@ -1,0 +1,355 @@
+#!/bin/bash
+
+SERVICE_TEMPLATE="/etc/systemd/system/autombot-badvpn@.service"
+SYSCTL_FILE="/etc/sysctl.d/99-autombot-network.conf"
+
+verde() { echo -e "\033[1;32m$1\033[0m"; }
+amarelo() { echo -e "\033[1;33m$1\033[0m"; }
+vermelho() { echo -e "\033[1;31m$1\033[0m"; }
+azul() { echo -e "\033[1;34m$1\033[0m"; }
+branco() { echo -e "\033[1;37m$1\033[0m"; }
+roxo() { echo -e "\033[0;35m$1\033[0m"; }
+
+pause() {
+  echo
+  read -p "Enter para voltar..." _
+}
+
+header() {
+  clear
+  roxo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  branco "                 BADVPN AUTOMBOT                  "
+  roxo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+}
+
+check_root() {
+  if [[ "$EUID" -ne 0 ]]; then
+    vermelho "Este módulo precisa ser executado como root."
+    exit 1
+  fi
+}
+
+detect_default_iface() {
+  ip route 2>/dev/null | awk '/default/ {print $5; exit}'
+}
+
+ensure_badvpn_binary() {
+  if [[ -x /bin/badvpn-udpgw ]]; then
+    return 0
+  fi
+
+  if [[ -x /usr/bin/badvpn-udpgw ]]; then
+    ln -sf /usr/bin/badvpn-udpgw /bin/badvpn-udpgw
+    return 0
+  fi
+
+  return 1
+}
+
+create_service_template() {
+  cat > "$SERVICE_TEMPLATE" <<'EOF'
+[Unit]
+Description=AutomBot BadVPN UDPGW on port %i
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/bin/badvpn-udpgw --listen-addr 0.0.0.0:%i --max-clients 1024 --max-connections-for-client 64
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+}
+
+apply_network_tuning() {
+  cat > "$SYSCTL_FILE" <<'EOF'
+net.ipv4.ip_forward=1
+net.core.rmem_max=16777216
+net.core.wmem_max=16777216
+net.core.netdev_max_backlog=5000
+net.ipv4.udp_rmem_min=16384
+net.ipv4.udp_wmem_min=16384
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_fin_timeout=15
+net.ipv4.tcp_keepalive_time=600
+net.ipv4.tcp_mtu_probing=1
+EOF
+
+  sysctl --system >/dev/null 2>&1
+}
+
+ensure_nat() {
+  local iface
+  iface="$(detect_default_iface)"
+
+  if [[ -z "$iface" ]]; then
+    vermelho "Não foi possível detectar a interface principal de rede."
+    return 1
+  fi
+
+  if ! iptables -t nat -C POSTROUTING -o "$iface" -j MASQUERADE 2>/dev/null; then
+    iptables -t nat -A POSTROUTING -o "$iface" -j MASQUERADE
+  fi
+
+  if ! iptables -C FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; then
+    iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+  fi
+
+  if ! iptables -C FORWARD -j ACCEPT 2>/dev/null; then
+    iptables -A FORWARD -j ACCEPT
+  fi
+
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save >/dev/null 2>&1 || true
+  elif [[ -d /etc/iptables ]]; then
+    mkdir -p /etc/iptables
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+  fi
+
+  return 0
+}
+
+allow_udp_port() {
+  local porta="$1"
+
+  if command -v ufw >/dev/null 2>&1; then
+    ufw allow "${porta}/udp" >/dev/null 2>&1 || true
+  fi
+}
+
+remove_udp_port() {
+  local porta="$1"
+
+  if command -v ufw >/dev/null 2>&1; then
+    ufw delete allow "${porta}/udp" >/dev/null 2>&1 || true
+  fi
+}
+
+service_exists_for_port() {
+  local porta="$1"
+  systemctl list-unit-files | awk '{print $1}' | grep -q "^autombot-badvpn@${porta}\.service$"
+}
+
+is_valid_port() {
+  local porta="$1"
+  [[ "$porta" =~ ^[0-9]+$ ]] || return 1
+  (( porta >= 1 && porta <= 65535 )) || return 1
+  return 0
+}
+
+start_port() {
+  local porta="$1"
+
+  if ! is_valid_port "$porta"; then
+    vermelho "Porta inválida: $porta"
+    return 1
+  fi
+
+  if ! ensure_badvpn_binary; then
+    vermelho "badvpn-udpgw não encontrado em /bin/badvpn-udpgw"
+    vermelho "Adicione o binário ao projeto/servidor antes de ativar."
+    return 1
+  fi
+
+  create_service_template
+  apply_network_tuning
+  ensure_nat || return 1
+  allow_udp_port "$porta"
+
+  systemctl enable --now "autombot-badvpn@${porta}" >/dev/null 2>&1
+
+  if systemctl is-active --quiet "autombot-badvpn@${porta}"; then
+    verde "BadVPN ativo na porta UDP $porta."
+    return 0
+  fi
+
+  vermelho "Falha ao ativar BadVPN na porta $porta."
+  return 1
+}
+
+stop_port() {
+  local porta="$1"
+
+  if ! is_valid_port "$porta"; then
+    vermelho "Porta inválida: $porta"
+    return 1
+  fi
+
+  systemctl disable --now "autombot-badvpn@${porta}" >/dev/null 2>&1 || true
+  remove_udp_port "$porta"
+
+  verde "BadVPN parado na porta UDP $porta."
+  return 0
+}
+
+list_ports() {
+  local found=0
+
+  echo
+  branco "SERVIÇOS BADVPN"
+  azul "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  while read -r unit load active sub desc; do
+    [[ -z "$unit" ]] && continue
+    echo " $unit  |  $active"
+    found=1
+  done < <(systemctl list-units --type=service --all --no-legend 2>/dev/null | grep 'autombot-badvpn@')
+
+  if [[ "$found" -eq 0 ]]; then
+    amarelo "Nenhuma porta BadVPN cadastrada."
+  fi
+
+  echo
+  branco "PORTAS UDP EM ESCUTA"
+  azul "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  ss -lunp 2>/dev/null | grep badvpn || amarelo "Nenhuma porta UDP BadVPN em escuta."
+  echo
+}
+
+show_status() {
+  header
+
+  if ensure_badvpn_binary; then
+    verde "Binário badvpn-udpgw: OK"
+  else
+    vermelho "Binário badvpn-udpgw: AUSENTE"
+  fi
+
+  local iface
+  iface="$(detect_default_iface)"
+  echo -e "\033[1;33mInterface principal:\033[0m ${iface:-desconhecida}"
+  echo -e "\033[1;33mIP Forward:\033[0m $(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)"
+
+  echo
+  list_ports
+  pause
+}
+
+install_base() {
+  header
+  branco "Preparando base do BadVPN..."
+
+  if ! ensure_badvpn_binary; then
+    vermelho "badvpn-udpgw não encontrado."
+    echo
+    echo "Coloque o binário em:"
+    echo "  /bin/badvpn-udpgw"
+    echo
+    echo "Depois dê permissão:"
+    echo "  chmod +x /bin/badvpn-udpgw"
+    pause
+    return 1
+  fi
+
+  create_service_template
+  apply_network_tuning
+  ensure_nat || {
+    pause
+    return 1
+  }
+
+  verde "Base configurada com sucesso."
+  pause
+}
+
+activate_default_ports() {
+  header
+  branco "Ativando portas padrão 7300 e 7000..."
+  echo
+
+  start_port 7300
+  start_port 7000
+
+  echo
+  list_ports
+  pause
+}
+
+open_custom_port() {
+  header
+  local porta
+
+  read -p "Informe a porta UDP que deseja abrir: " porta
+
+  if ! is_valid_port "$porta"; then
+    vermelho "Porta inválida."
+    pause
+    return
+  fi
+
+  echo
+  start_port "$porta"
+  pause
+}
+
+stop_custom_port() {
+  header
+  local porta
+
+  read -p "Informe a porta UDP que deseja parar: " porta
+
+  if ! is_valid_port "$porta"; then
+    vermelho "Porta inválida."
+    pause
+    return
+  fi
+
+  echo
+  stop_port "$porta"
+  pause
+}
+
+view_logs() {
+  header
+  local porta
+
+  read -p "Informe a porta do serviço para ver logs: " porta
+
+  if ! is_valid_port "$porta"; then
+    vermelho "Porta inválida."
+    pause
+    return
+  fi
+
+  echo
+  journalctl -u "autombot-badvpn@${porta}" -n 50 --no-pager 2>/dev/null || vermelho "Sem logs para esta porta."
+  pause
+}
+
+badvpn_menu() {
+  check_root
+
+  while true; do
+    header
+    echo " [1] Preparar base do BadVPN"
+    echo " [2] Ativar portas padrão (7300 e 7000)"
+    echo " [3] Abrir nova porta UDP"
+    echo " [4] Parar porta UDP"
+    echo " [5] Listar portas ativas"
+    echo " [6] Ver status geral"
+    echo " [7] Ver logs de uma porta"
+    echo " [0] Voltar"
+    echo
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+      1) install_base ;;
+      2) activate_default_ports ;;
+      3) open_custom_port ;;
+      4) stop_custom_port ;;
+      5) header; list_ports; pause ;;
+      6) show_status ;;
+      7) view_logs ;;
+      0) exit 0 ;;
+      *) vermelho "Opção inválida."; sleep 1 ;;
+    esac
+  done
+}
+
+badvpn_menu
