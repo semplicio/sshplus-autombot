@@ -1,16 +1,31 @@
 #!/bin/bash
 
+set -u
+
 BASE_DIR="/etc/SSHPlus/proxy-ports"
 RUNNER="/usr/local/lib/sshplus/proxyport-runner.sh"
+DEBUG_LOG="/tmp/proxyportas-debug.log"
 
 verde(){ echo -e "\033[1;32m$1\033[0m"; }
 amarelo(){ echo -e "\033[1;33m$1\033[0m"; }
 vermelho(){ echo -e "\033[1;31m$1\033[0m"; }
 azul(){ echo -e "\033[1;34m$1\033[0m"; }
 
+log() {
+  echo "[$(date '+%F %T')] $*" >> "$DEBUG_LOG"
+}
+
 pause() {
   echo
   read -p "Enter para voltar..." _
+}
+
+fail() {
+  vermelho "$1"
+  echo
+  echo "Log: $DEBUG_LOG"
+  pause
+  return 1
 }
 
 require_root() {
@@ -26,15 +41,28 @@ log_action() {
   fi
 }
 
-ensure_base() {
+install_missing_deps() {
+  local missing=()
+
+  command -v socat >/dev/null 2>&1 || missing+=("socat")
+  command -v openssl >/dev/null 2>&1 || missing+=("openssl")
+  command -v nc >/dev/null 2>&1 || missing+=("netcat-openbsd")
+  command -v curl >/dev/null 2>&1 || missing+=("curl")
+
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    log "Dependências já presentes"
+    return 0
+  fi
+
+  amarelo "Instalando dependências: ${missing[*]}"
+  apt-get update -y >>"$DEBUG_LOG" 2>&1 || return 1
+  apt-get install -y "${missing[@]}" >>"$DEBUG_LOG" 2>&1 || return 1
+  return 0
+}
+
+ensure_runner() {
   mkdir -p "$BASE_DIR"
   mkdir -p /usr/local/lib/sshplus
-
-  apt-get update -y >/dev/null 2>&1 || true
-  apt-get install -y socat openssl netcat-openbsd curl >/dev/null 2>&1 || {
-    vermelho "Falha ao instalar dependências."
-    exit 1
-  }
 
   cat > "$RUNNER" <<'EOF'
 #!/bin/bash
@@ -82,11 +110,11 @@ open_firewall_port() {
   local port="$1"
 
   iptables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || \
-    iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
+    iptables -I INPUT -p tcp --dport "$port" -j ACCEPT >>"$DEBUG_LOG" 2>&1 || true
 
   if command -v ufw >/dev/null 2>&1; then
-    ufw allow "${port}/tcp" >/dev/null 2>&1 || true
-    ufw reload >/dev/null 2>&1 || true
+    ufw allow "${port}/tcp" >>"$DEBUG_LOG" 2>&1 || true
+    ufw reload >>"$DEBUG_LOG" 2>&1 || true
   fi
 }
 
@@ -105,10 +133,8 @@ remove_firewall_port() {
 
 validate_https_cert() {
   local cert_file="$1"
-
   [[ -z "$cert_file" ]] && return 1
   [[ ! -f "$cert_file" ]] && return 1
-
   openssl x509 -in "$cert_file" -noout >/dev/null 2>&1
 }
 
@@ -169,11 +195,6 @@ show_connection_summary() {
   echo "Porta externa : ${port}"
   echo "Modo          : ${mode}"
   echo "Destino       : ${target_host}:${target_port}"
-  echo
-  echo "Exemplos:"
-  echo "Host/IP       : SEU_IP_OU_DOMINIO"
-  echo "Porta         : ${port}"
-  echo "Tipo          : ${mode}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
 }
@@ -204,8 +225,7 @@ install_proxy_port() {
   port="${port:-8080}"
 
   if [[ ! "$port" =~ ^[0-9]+$ ]]; then
-    vermelho "Porta inválida."
-    pause
+    fail "Porta inválida."
     return
   fi
 
@@ -221,7 +241,7 @@ install_proxy_port() {
     1) mode="ssh-only" ;;
     2) mode="http" ;;
     3) mode="https" ;;
-    *) vermelho "Modo inválido."; pause; return ;;
+    *) fail "Modo inválido."; return ;;
   esac
 
   read -p "Host de destino [127.0.0.1]: " target_host
@@ -230,7 +250,7 @@ install_proxy_port() {
   read -p "Porta de destino [22]: " target_port
   target_port="${target_port:-22}"
 
-  read -p "Texto de referência/resposta [SSHPLUS-AUTOMBOT]: " response_text
+  read -p "Texto de referência [SSHPLUS-AUTOMBOT]: " response_text
   response_text="${response_text:-SSHPLUS-AUTOMBOT}"
 
   cert_file=""
@@ -239,8 +259,7 @@ install_proxy_port() {
     cert_file="${cert_file:-/etc/letsencrypt/live/vpn.autombot.com.br/fullchain.pem}"
 
     if ! validate_https_cert "$cert_file"; then
-      vermelho "Certificado inválido ou não encontrado: $cert_file"
-      pause
+      fail "Certificado inválido ou não encontrado: $cert_file"
       return
     fi
   fi
@@ -252,9 +271,8 @@ install_proxy_port() {
   open_firewall_port "$port"
 
   if ! systemctl restart "sshplus-proxy-${port}.service"; then
-    vermelho "Falha ao iniciar serviço da porta ${port}."
     systemctl status "sshplus-proxy-${port}.service" -l --no-pager || true
-    pause
+    fail "Falha ao iniciar serviço da porta ${port}."
     return
   fi
 
@@ -273,11 +291,11 @@ list_proxy_ports() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
 
-  ls "$BASE_DIR"/*.conf >/dev/null 2>&1 || {
+  if ! ls "$BASE_DIR"/*.conf >/dev/null 2>&1; then
     echo "Nenhuma porta configurada."
     pause
     return
-  }
+  fi
 
   for file in "$BASE_DIR"/*.conf; do
     echo "Arquivo: $file"
@@ -287,6 +305,29 @@ list_proxy_ports() {
 
   echo "[SERVIÇOS]"
   systemctl list-units --type=service --all | grep 'sshplus-proxy-' || true
+  echo
+  pause
+}
+
+status_proxy_port() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "      STATUS DA PORTA"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+
+  read -p "Porta para verificar: " port
+  [[ -z "$port" ]] && return
+
+  if [[ -f "${BASE_DIR}/${port}.conf" ]]; then
+    echo "[CONFIG]"
+    cat "${BASE_DIR}/${port}.conf"
+    echo
+  fi
+
+  systemctl status "sshplus-proxy-${port}.service" -l --no-pager || true
+  echo
+  ss -lntp | grep ":${port}" || true
   echo
   pause
 }
@@ -302,9 +343,8 @@ restart_proxy_port() {
   [[ -z "$port" ]] && return
 
   systemctl restart "sshplus-proxy-${port}.service" || {
-    vermelho "Falha ao reiniciar."
     systemctl status "sshplus-proxy-${port}.service" -l --no-pager || true
-    pause
+    fail "Falha ao reiniciar."
     return
   }
 
@@ -350,31 +390,21 @@ logs_proxy_port() {
   pause
 }
 
-status_proxy_port() {
-  clear
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "      STATUS DA PORTA"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo
-
-  read -p "Porta para verificar: " port
-  [[ -z "$port" ]] && return
-
-  if [[ -f "${BASE_DIR}/${port}.conf" ]]; then
-    echo "[CONFIG]"
-    cat "${BASE_DIR}/${port}.conf"
-    echo
-  fi
-
-  systemctl status "sshplus-proxy-${port}.service" -l --no-pager || true
-  echo
-  ss -lntp | grep ":${port}" || true
-  echo
-  pause
+init_module() {
+  : > "$DEBUG_LOG"
+  log "Iniciando modulo proxyportas"
+  require_root
+  install_missing_deps || {
+    fail "Falha ao instalar dependências."
+    exit 1
+  }
+  ensure_runner || {
+    fail "Falha ao preparar runner."
+    exit 1
+  }
 }
 
-require_root
-ensure_base
+init_module
 
 while true; do
   clear
