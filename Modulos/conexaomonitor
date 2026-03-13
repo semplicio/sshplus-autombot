@@ -1,0 +1,25 @@
+#!/bin/bash
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "      MONITOR DE CONEXÕES"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+echo "[1] Ver logs do Squid"
+echo "[2] Ver logs do SSH"
+echo "[3] Ver tráfego 3128"
+echo "[4] Ver tráfego 22"
+echo "[5] Ver tráfego 3128 e 22"
+echo "[0] Voltar"
+echo
+read -p "Escolha uma opção: " op
+
+case "$op" in
+  1) tail -f /var/log/squid/access.log ;;
+  2) tail -f /var/log/auth.log ;;
+  3) tcpdump -nni any port 3128 ;;
+  4) tcpdump -nni any port 22 ;;
+  5) tcpdump -nni any 'port 3128 or port 22' ;;
+  0) exit 0 ;;
+  *) echo "Opção inválida."; sleep 1 ;;
+esac
