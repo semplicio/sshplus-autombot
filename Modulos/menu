@@ -176,6 +176,7 @@ validate_modules() {
     installtls
     tlsrenew
     installsockshttp
+    sockshttpstatus
   )
 
   for mod in "${mods[@]}"; do
@@ -261,6 +262,7 @@ menu_conexoes() {
     echo " [7] Painel de conexões"
     echo " [8] Reiniciar serviços de conexão"
     echo " [9] Instalar SOCKSHTTP"
+    echo " [10] Diagnóstico SOCKSHTTP"
     echo " [0] Voltar"
     echo
     read -p "Escolha uma opção: " opcao
@@ -275,6 +277,7 @@ menu_conexoes() {
       7) clear; run_module painelconexoes ;;
       8) clear; run_module reiniciarservicos ;;
       9) clear; run_module installsockshttp ;;
+      10) clear; run_module sockshttpstatus ;;
       0) break ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
