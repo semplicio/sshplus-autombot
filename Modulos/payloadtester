@@ -1,0 +1,33 @@
+#!/bin/bash
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "         TESTE DE PAYLOAD"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+read -p "Host do proxy [127.0.0.1]: " proxy_host
+proxy_host="${proxy_host:-127.0.0.1}"
+
+read -p "Porta do proxy [3128]: " proxy_port
+proxy_port="${proxy_port:-3128}"
+
+read -p "Host de destino [vpn.autombot.com.br]: " dst_host
+dst_host="${dst_host:-vpn.autombot.com.br}"
+
+read -p "Porta de destino [22]: " dst_port
+dst_port="${dst_port:-22}"
+
+payload="CONNECT ${dst_host}:${dst_port} HTTP/1.1\r\nHost: ${dst_host}\r\nConnection: Keep-Alive\r\n\r\n"
+
+echo
+echo "Payload enviado:"
+echo "CONNECT ${dst_host}:${dst_port} HTTP/1.1"
+echo "Host: ${dst_host}"
+echo "Connection: Keep-Alive"
+echo
+
+printf "$payload" | nc -v "$proxy_host" "$proxy_port"
+
+echo
+read -p "Enter para voltar..." _
