@@ -180,6 +180,7 @@ validate_modules() {
     conexaomonitor
     testeconexao
     proxyportas
+    proxyhttpmulti
   )
 
   for mod in "${mods[@]}"; do
@@ -269,6 +270,7 @@ menu_conexoes() {
     echo " [11] Monitor ao vivo"
     echo " [12] Teste de conexão"
     echo " [13] Gerenciar portas de conexão"
+    echo " [14] Gerenciar Proxy HTTP multiporta"
     echo " [0] Voltar"
     echo
     read -p "Escolha uma opção: " opcao
@@ -287,6 +289,7 @@ menu_conexoes() {
       11) clear; run_module conexaomonitor ;;
       12) clear; run_module testeconexao ;;
       13) clear; run_module proxyportas ;;
+      14) clear; run_module proxyhttpmulti ;;
       0) break ;;
       *) vermelho "Opção inválida."; sleep 1 ;;
     esac
